@@ -1,4 +1,3 @@
-import math
 import random
 from typing import List
 
@@ -10,7 +9,7 @@ from torchvision import transforms as T
 from collections import namedtuple
 
 import constants as const
-from q_networks import DQN
+from dqn.q_networks import DQN
 
 
 Transition = namedtuple("Transition", ("state", "action", "next_state", "reward"))
@@ -46,7 +45,6 @@ def select_action(state, steps_done: int, num_actions: int, policy_net: DQN, dev
     eps_threshold = max(
         const.EPS_END, const.EPS_START - steps_done * (const.EPS_START - const.EPS_END) / const.EPS_DECAY
     )
-    print(f"EPSILON: {eps_threshold}")
     if random.random() > eps_threshold:
         with torch.no_grad():
             return policy_net(state).max(1)[1].view(1, 1)
