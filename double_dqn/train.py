@@ -31,7 +31,6 @@ for i in range(const.NUM_EPISODES):
         steps_done += 1
         _, reward, done, _ = env.step(action.item())
         reward = torch.tensor([reward], device=device)
-        print(reward)
 
         last_screen = current_screen
         current_screen = utils.get_screen(env)
