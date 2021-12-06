@@ -9,7 +9,7 @@ from torchvision import transforms as T
 from collections import namedtuple
 
 import constants as const
-from dqn.q_networks import DQN
+from networks.q_networks import DQN
 
 
 Transition = namedtuple("Transition", ("state", "action", "next_state", "reward"))

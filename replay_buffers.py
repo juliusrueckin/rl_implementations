@@ -1,6 +1,6 @@
 import random
 from collections import deque
-import utils
+from utils import utils
 
 
 class ReplayBuffer:

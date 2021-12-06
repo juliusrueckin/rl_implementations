@@ -1,8 +1,8 @@
 import torch
 
 import constants as const
-import utils
-from q_networks import DQN
+from utils import utils
+from networks.q_networks import DQN
 from replay_buffers import ReplayBuffer
 from torch import nn
 
