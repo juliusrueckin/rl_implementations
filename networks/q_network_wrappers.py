@@ -18,13 +18,13 @@ class DeepQLearningWrapper:
         self.target_net.eval()
 
         self.loss_fn = nn.SmoothL1Loss(reduction="none")
-        self.optimizer = torch.optim.RMSprop(self.policy_net.parameters(), lr=const.LEARNING_RATE)
+        self.optimizer = torch.optim.Adam(self.policy_net.parameters(), lr=const.LEARNING_RATE)
 
     def update_target_network(self):
         self.target_net.load_state_dict(self.policy_net.state_dict())
 
     def optimize_model(self):
-        if len(self.replay_buffer) < const.BATCH_SIZE:
+        if len(self.replay_buffer) < const.MIN_START_STEPS:
             return
 
         transitions, indices, weights = self.replay_buffer.sample()
@@ -81,13 +81,13 @@ class DoubleDeepQLearningWrapper:
         self.target_net.eval()
 
         self.loss_fn = nn.SmoothL1Loss(reduction="none")
-        self.optimizer = torch.optim.RMSprop(self.policy_net.parameters(), lr=const.LEARNING_RATE)
+        self.optimizer = torch.optim.Adam(self.policy_net.parameters(), lr=const.LEARNING_RATE)
 
     def update_target_network(self):
         self.target_net.load_state_dict(self.policy_net.state_dict())
 
     def optimize_model(self):
-        if len(self.replay_buffer) < const.BATCH_SIZE:
+        if len(self.replay_buffer) < const.MIN_START_STEPS:
             return
 
         transitions, indices, weights = self.replay_buffer.sample()
