@@ -8,14 +8,38 @@ from utils import utils
 
 
 class ReplayBuffer:
-    def __init__(self, buffer_length: int = 10000):
+    def __init__(self, buffer_length: int = 10000, batch_size: int = 32):
+        self.buffer_length = buffer_length
+        self.batch_size = batch_size
         self.buffer = deque([], maxlen=buffer_length)
+
+    def step(self):
+        pass
+
+    def push(self, *args):
+        raise NotImplementedError("Replay buffer does not implement 'push()' method!")
+
+    def sample(self) -> Tuple[List, np.array, np.array]:
+        raise NotImplementedError("Replay buffer does not implement 'sample()' method!")
+
+    def update(self, indices: np.array, priorities: np.array):
+        pass
+
+    def __len__(self):
+        return len(self.buffer)
+
+
+class ExperienceReplay(ReplayBuffer):
+    def __init__(self, buffer_length: int = 10000, batch_size: int = 32):
+        super().__init__(buffer_length, batch_size)
 
     def push(self, *args):
         self.buffer.append(utils.Transition(*args))
 
-    def sample(self, batch_size: int = 32):
-        return random.sample(self.buffer, batch_size)
+    def sample(self) -> Tuple[List, np.array, np.array]:
+        sample_indices = np.random.choice(len(self.buffer), size=self.batch_size)
+        sample_transitions = [self.buffer[i] for i in sample_indices]
+        return sample_transitions, sample_indices, np.ones(len(self.buffer))
 
     def __len__(self):
         return len(self.buffer)
