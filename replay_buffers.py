@@ -71,7 +71,7 @@ class PrioritizedExperienceReplay:
         probabilities = priorities_tmp ** self.alpha
         probabilities /= probabilities.sum()
 
-        sample_indices = np.random.choice(len(self.buffer), size=self.batch_size, p=probabilities)
+        sample_indices = np.random.choice(len(self.buffer), size=self.batch_size, p=probabilities, replace=False)
         sample_transitions = [self.buffer[i] for i in sample_indices]
 
         weights = (probabilities[sample_indices] * len(self.buffer)) ** (-self.beta)
@@ -83,7 +83,7 @@ class PrioritizedExperienceReplay:
         if len(self.buffer) == 0:
             self.priorities.append(1.0)
         else:
-            self.priorities.append(np.mean(np.array(self.priorities)))
+            self.priorities.append(np.max(np.array(self.priorities)))
             priorities_tmp = np.array(self.priorities)
             priorities_tmp /= priorities_tmp.sum()
             self.priorities = deque(priorities_tmp, maxlen=self.buffer_length)
