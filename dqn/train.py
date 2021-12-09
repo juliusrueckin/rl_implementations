@@ -43,13 +43,15 @@ for i in range(const.NUM_EPISODES):
         deep_q_learning_wrapper.replay_buffer.push(state, action, next_state, reward)
         state = next_state
         deep_q_learning_wrapper.optimize_model()
+
+        if steps_done % const.TARGET_UPDATE == 0:
+            print(f"UPDATE TARGET NETWORK after {steps_done} STEPS")
+            deep_q_learning_wrapper.update_target_network()
+
         if done:
             episode_durations.append(t + 1)
             utils.plot_durations(episode_durations)
             break
-
-    if i % const.TARGET_UPDATE == 0:
-        deep_q_learning_wrapper.update_target_network()
 
 print("Complete")
 env.render()

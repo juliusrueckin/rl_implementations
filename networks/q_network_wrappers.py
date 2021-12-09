@@ -27,6 +27,9 @@ class DeepQLearningWrapper:
         if len(self.replay_buffer) < const.MIN_START_STEPS:
             return
 
+        if len(self.replay_buffer) == const.MIN_START_STEPS:
+            print(f"START OPTIMIZATION")
+
         transitions, indices, weights = self.replay_buffer.sample()
         weights = torch.FloatTensor(weights).to(self.device)
         batch = utils.Transition(*zip(*transitions))
@@ -89,6 +92,9 @@ class DoubleDeepQLearningWrapper:
     def optimize_model(self):
         if len(self.replay_buffer) < const.MIN_START_STEPS:
             return
+
+        if len(self.replay_buffer) == const.MIN_START_STEPS:
+            print(f"START OPTIMIZATION")
 
         transitions, indices, weights = self.replay_buffer.sample()
         weights = torch.FloatTensor(weights).to(self.device)
