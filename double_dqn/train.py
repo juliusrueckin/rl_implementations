@@ -23,9 +23,7 @@ episode_durations = []
 
 for i in range(const.NUM_EPISODES):
     env.reset()
-    last_screen = utils.get_screen(env)
-    current_screen = utils.get_screen(env)
-    state = current_screen - last_screen
+    state = utils.get_screen(env)
 
     no_op_steps = random.randint(0, const.NO_OP_MAX_STEPS)
     for t in count():
@@ -49,12 +47,9 @@ for i in range(const.NUM_EPISODES):
         _, reward, done, _ = env.step(action.item())
         reward = torch.tensor([reward], device=device)
 
-        last_screen = current_screen
-        current_screen = utils.get_screen(env)
+        state = utils.get_screen(env)
 
-        next_state = None
-        if not done:
-            next_state = current_screen - last_screen
+        next_state = None if done else state
 
         double_dql_wrapper.replay_buffer.push(state, action, next_state, reward)
         state = next_state
