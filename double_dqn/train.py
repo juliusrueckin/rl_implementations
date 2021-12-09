@@ -49,7 +49,8 @@ for i in range(const.NUM_EPISODES):
 
         if done:
             episode_durations.append(t + 1)
-            utils.plot_durations(episode_durations)
+            if i % 50 == 0:
+                utils.plot_durations(episode_durations)
             break
 
 print("Complete")
