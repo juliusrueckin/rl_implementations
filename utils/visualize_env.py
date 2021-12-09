@@ -7,6 +7,6 @@ env = gym.make(const.ENV_NAME).unwrapped
 env.reset()
 
 plt.figure()
-plt.imshow(utils.get_screen(env).cpu().squeeze(0).permute(1, 2, 0).numpy(), interpolation="none")
+plt.imshow(utils.get_screen(env).cpu().squeeze(0).squeeze(0).numpy(), cmap="gray")
 plt.title("Example extracted screen")
 plt.show()

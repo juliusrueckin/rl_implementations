@@ -13,7 +13,15 @@ from networks.q_networks import DQN
 
 
 Transition = namedtuple("Transition", ("state", "action", "next_state", "reward"))
-resize = T.Compose([T.ToPILImage(), T.Resize(const.INPUT_SIZE, interpolation=Image.CUBIC), T.ToTensor()])
+transform = T.Compose(
+    [
+        T.ToPILImage(),
+        T.Resize(const.INPUT_SIZE, interpolation=Image.CUBIC),
+        T.Grayscale(num_output_channels=1),
+        T.ToTensor(),
+        T.Normalize(mean=[0.5], std=[0.5]),
+    ]
+)
 
 
 def get_cart_location(env, screen_width: int) -> int:
@@ -38,7 +46,8 @@ def get_screen(env) -> torch.Tensor:
     screen = screen[:, :, slice_range]
     screen = np.ascontiguousarray(screen, dtype=np.float32) / 255
     screen = torch.from_numpy(screen)
-    return resize(screen).unsqueeze(0)
+
+    return transform(screen).unsqueeze(0)
 
 
 def select_action(state, steps_done: int, num_actions: int, policy_net: DQN, device: torch.device):
