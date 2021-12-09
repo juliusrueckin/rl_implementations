@@ -85,15 +85,13 @@ class PrioritizedExperienceReplay:
         else:
             self.priorities.append(np.max(np.array(self.priorities)))
             priorities_tmp = np.array(self.priorities)
-            priorities_tmp /= priorities_tmp.sum()
             self.priorities = deque(priorities_tmp, maxlen=self.buffer_length)
 
         self.buffer.append(utils.Transition(*args))
 
     def update(self, indices: np.array, priorities: np.array):
         priorities_tmp = np.array(self.priorities)
-        priorities_tmp[indices] = priorities
-        priorities_tmp /= priorities_tmp.sum()
+        priorities_tmp[indices] = np.abs(priorities)
         self.priorities = deque(priorities_tmp, maxlen=self.buffer_length)
 
     def __len__(self):
