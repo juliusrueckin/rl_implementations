@@ -14,8 +14,8 @@ class DQN(nn.Module):
         self.conv3 = nn.Conv2d(64, 64, kernel_size=(3, 3), stride=1)
         self.bn3 = nn.BatchNorm2d(64, track_running_stats=False)
 
-        self.fc = nn.Linear(self.hidden_dimensions(width, height), 512)
-        self.head = nn.Linear(512, num_actions)
+        self.fc = nn.Linear(self.hidden_dimensions(width, height), 64)
+        self.head = nn.Linear(64, num_actions)
 
     def hidden_dimensions(self, width: int = 84, height: int = 84) -> int:
         x = F.relu(self.bn1(self.conv1(torch.rand((1, 3, width, height)))))
