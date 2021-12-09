@@ -2,7 +2,7 @@ from itertools import count
 
 import gym
 import torch
-
+import random
 import constants as const
 from utils import utils
 from networks.q_network_wrappers import DoubleDeepQLearningWrapper
@@ -26,7 +26,17 @@ for i in range(const.NUM_EPISODES):
     last_screen = utils.get_screen(env)
     current_screen = utils.get_screen(env)
     state = current_screen - last_screen
+
+    no_op_steps = random.randint(0, const.NO_OP_MAX_STEPS)
     for t in count():
+        if t < no_op_steps:
+            action = torch.tensor([[random.randrange(num_actions)]], device=device, dtype=torch.long)
+            _, _, done, _ = env.step(action.item())
+            if done:
+                break
+
+            continue
+
         action = utils.select_action(state, steps_done, num_actions, double_dql_wrapper.policy_net, device)
         steps_done += 1
         _, reward, done, _ = env.step(action.item())
