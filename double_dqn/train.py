@@ -37,6 +37,13 @@ for i in range(const.NUM_EPISODES):
 
             continue
 
+        if t % const.ACTION_REPETITIONS != 0:
+            _, _, done, _ = env.step(action.item())
+            if done:
+                break
+
+            continue
+
         action = utils.select_action(state, steps_done, num_actions, double_dql_wrapper.policy_net, device)
         steps_done += 1
         _, reward, done, _ = env.step(action.item())
