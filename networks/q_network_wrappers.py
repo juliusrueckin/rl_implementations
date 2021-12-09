@@ -1,10 +1,10 @@
 import torch
+from torch import nn
 
 import constants as const
-from utils import utils
 from networks.q_networks import DQN
 from replay_buffers import ExperienceReplay, PrioritizedExperienceReplay
-from torch import nn
+from utils import utils
 
 
 class DeepQLearningWrapper:

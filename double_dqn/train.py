@@ -1,11 +1,13 @@
+import random
+from collections import deque
 from itertools import count
 
 import gym
 import torch
-import random
+
 import constants as const
-from utils import utils
 from networks.q_network_wrappers import DoubleDeepQLearningWrapper
+from utils import utils
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -13,7 +15,7 @@ env = gym.make(const.ENV_NAME).unwrapped
 env.reset()
 
 init_screen = utils.get_screen(env)
-_, _, screen_height, screen_width = init_screen.shape
+_, screen_height, screen_width = init_screen.shape
 num_actions = env.action_space.n
 
 double_dql_wrapper = DoubleDeepQLearningWrapper(screen_width, screen_height, num_actions)
@@ -23,7 +25,10 @@ episode_durations = []
 
 for i in range(const.NUM_EPISODES):
     env.reset()
-    state = utils.get_screen(env)
+    observation = utils.get_screen(env)
+    state = deque([torch.zeros(observation.size()) for _ in range(const.FRAMES_STACKED)], maxlen=const.FRAMES_STACKED)
+    state.append(observation)
+    state_tensor = torch.stack(tuple(state), dim=1)
 
     no_op_steps = random.randint(0, const.NO_OP_MAX_STEPS)
     for t in count():
@@ -42,17 +47,19 @@ for i in range(const.NUM_EPISODES):
 
             continue
 
-        action = utils.select_action(state, steps_done, num_actions, double_dql_wrapper.policy_net, device)
+        action = utils.select_action(state_tensor, steps_done, num_actions, double_dql_wrapper.policy_net, device)
         steps_done += 1
         _, reward, done, _ = env.step(action.item())
         reward = torch.tensor([reward], device=device)
 
-        state = utils.get_screen(env)
+        next_observation = utils.get_screen(env)
+        next_state_tensor = None
+        if not done:
+            next_state = state.copy()
+            next_state.append(next_observation)
+            next_state_tensor = torch.stack(tuple(next_state), dim=1)
 
-        next_state = None if done else state
-
-        double_dql_wrapper.replay_buffer.push(state, action, next_state, reward)
-        state = next_state
+        double_dql_wrapper.replay_buffer.push(state_tensor, action, next_state_tensor, reward)
         double_dql_wrapper.optimize_model()
 
         if steps_done % const.TARGET_UPDATE == 0:

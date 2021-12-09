@@ -1,4 +1,5 @@
 import random
+from collections import namedtuple
 from typing import List
 
 import matplotlib.pyplot as plt
@@ -6,11 +7,9 @@ import numpy as np
 import torch
 from PIL import Image
 from torchvision import transforms as T
-from collections import namedtuple
 
 import constants as const
 from networks.q_networks import DQN
-
 
 Transition = namedtuple("Transition", ("state", "action", "next_state", "reward"))
 transform = T.Compose(
@@ -19,7 +18,6 @@ transform = T.Compose(
         T.Resize(const.INPUT_SIZE, interpolation=Image.CUBIC),
         T.Grayscale(num_output_channels=1),
         T.ToTensor(),
-        T.Normalize(mean=[0.5], std=[0.5]),
     ]
 )
 
@@ -47,10 +45,10 @@ def get_screen(env) -> torch.Tensor:
     screen = np.ascontiguousarray(screen, dtype=np.float32) / 255
     screen = torch.from_numpy(screen)
 
-    return transform(screen).unsqueeze(0)
+    return transform(screen)
 
 
-def select_action(state, steps_done: int, num_actions: int, policy_net: DQN, device: torch.device):
+def select_action(state: torch.tensor, steps_done: int, num_actions: int, policy_net: DQN, device: torch.device):
     eps_threshold = max(
         const.EPS_END, const.EPS_START - steps_done * (const.EPS_START - const.EPS_END) / const.EPS_DECAY
     )

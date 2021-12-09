@@ -5,8 +5,8 @@ import gym
 import torch
 
 import constants as const
-from utils import utils
 from networks.q_network_wrappers import DeepQLearningWrapper
+from utils import utils
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
