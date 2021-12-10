@@ -10,11 +10,11 @@ class DQN(nn.Module):
         super(DQN, self).__init__()
 
         self.conv1 = nn.Conv2d(const.FRAMES_STACKED, 32, kernel_size=(4, 4), stride=4)
-        self.bn1 = nn.BatchNorm2d(32, track_running_stats=False)
+        self.bn1 = nn.BatchNorm2d(32)
         self.conv2 = nn.Conv2d(32, 64, kernel_size=(4, 4), stride=2)
-        self.bn2 = nn.BatchNorm2d(64, track_running_stats=False)
+        self.bn2 = nn.BatchNorm2d(64)
         self.conv3 = nn.Conv2d(64, 64, kernel_size=(3, 3), stride=1)
-        self.bn3 = nn.BatchNorm2d(64, track_running_stats=False)
+        self.bn3 = nn.BatchNorm2d(64)
 
         self.fc = nn.Linear(self.hidden_dimensions(width, height), 64)
         self.head = nn.Linear(64, num_actions)
