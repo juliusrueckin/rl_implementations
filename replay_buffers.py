@@ -11,6 +11,7 @@ class ReplayBuffer:
         self.buffer_length = buffer_length
         self.batch_size = batch_size
         self.buffer = deque([], maxlen=buffer_length)
+        self.beta = 1
 
     def step(self):
         pass

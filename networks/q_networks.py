@@ -9,7 +9,7 @@ class DQN(nn.Module):
     def __init__(self, width: int = 84, height: int = 84, num_actions: int = 100):
         super(DQN, self).__init__()
 
-        self.conv1 = nn.Conv2d(const.FRAMES_STACKED, 32, kernel_size=(8, 8), stride=4)
+        self.conv1 = nn.Conv2d(const.FRAMES_STACKED, 32, kernel_size=(4, 4), stride=4)
         self.bn1 = nn.BatchNorm2d(32, track_running_stats=False)
         self.conv2 = nn.Conv2d(32, 64, kernel_size=(4, 4), stride=2)
         self.bn2 = nn.BatchNorm2d(64, track_running_stats=False)
@@ -32,4 +32,4 @@ class DQN(nn.Module):
         x = F.relu(self.bn3(self.conv3(x)))
 
         x = self.fc(x.view(x.size(0), -1))
-        return self.head(x)
+        return F.softplus(self.head(x))

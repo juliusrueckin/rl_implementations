@@ -1,5 +1,6 @@
 import torch
 from torch import nn
+from torch.utils.tensorboard import SummaryWriter
 
 import constants as const
 from networks.q_networks import DQN
@@ -72,7 +73,8 @@ class DeepQLearningWrapper:
 
 
 class DoubleDeepQLearningWrapper:
-    def __init__(self, screen_width: int, screen_height: int, num_actions: int):
+    def __init__(self, screen_width: int, screen_height: int, num_actions: int, writer: SummaryWriter = None):
+        self.writer = writer
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.replay_buffer = PrioritizedExperienceReplay(
             const.REPLAY_BUFFER_LEN, const.BATCH_SIZE, const.ALPHA, const.BETA0, const.REPLAY_DELAY
@@ -89,7 +91,7 @@ class DoubleDeepQLearningWrapper:
     def update_target_network(self):
         self.target_net.load_state_dict(self.policy_net.state_dict())
 
-    def optimize_model(self):
+    def optimize_model(self, steps_done: int = None):
         if len(self.replay_buffer) < const.MIN_START_STEPS:
             return
 
@@ -142,3 +144,23 @@ class DoubleDeepQLearningWrapper:
 
         self.replay_buffer.step()
         self.replay_buffer.update(indices, (losses + 1e-8).view(-1).data.cpu().numpy())
+
+        if self.writer:
+            self.writer.add_scalar("Training/Loss", weighted_loss, steps_done)
+            self.writer.add_scalar("Hyperparam/Beta", self.replay_buffer.beta, steps_done)
+
+            self.writer.add_scalar("Training/TD-Target", expected_state_action_values.mean(), steps_done)
+            self.writer.add_scalar("Training/TD-Estimation", state_action_values.mean(), steps_done)
+            self.writer.add_histogram("OnlineNetwork/NextQValues", next_state_action_values, steps_done)
+
+            total_grad_norm = 0
+            for params in self.policy_net.parameters():
+                if params.grad is not None:
+                    total_grad_norm += params.grad.data.norm(2).item()
+
+            self.writer.add_scalar(f"Training/GradientNorm", total_grad_norm, steps_done)
+
+            if steps_done % 500 == 0:
+                for tag, params in self.policy_net.named_parameters():
+                    if params.grad is not None:
+                        self.writer.add_histogram(f"Parameters/{tag}", params.data.cpu().numpy(), steps_done)
