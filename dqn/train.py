@@ -1,56 +1,77 @@
-"""Reference implementation: https://pytorch.org/tutorials/intermediate/reinforcement_q_learning.html"""
+import random
+from collections import deque
 from itertools import count
 
 import gym
 import torch
+from torch.utils.tensorboard import SummaryWriter
 
 import constants as const
 from networks.q_network_wrappers import DeepQLearningWrapper
 from utils import utils
 
+writer = SummaryWriter(log_dir=const.LOG_DIR)
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 env = gym.make(const.ENV_NAME).unwrapped
 env.reset()
 
 init_screen = utils.get_screen(env)
-_, _, screen_height, screen_width = init_screen.shape
+_, screen_height, screen_width = init_screen.shape
 num_actions = env.action_space.n
 
-deep_q_learning_wrapper = DeepQLearningWrapper(screen_width, screen_height, num_actions)
+deep_q_learning_wrapper = DeepQLearningWrapper(screen_width, screen_height, num_actions, writer)
 
 steps_done = 0
-episode_durations = []
 
 for i in range(const.NUM_EPISODES):
     env.reset()
-    last_screen = utils.get_screen(env)
-    current_screen = utils.get_screen(env)
-    state = current_screen - last_screen
+    observation = utils.get_screen(env)
+    state = deque([torch.zeros(observation.size()) for _ in range(const.FRAMES_STACKED)], maxlen=const.FRAMES_STACKED)
+    state.append(observation)
+    state_tensor = torch.stack(tuple(state), dim=1)
+
+    no_op_steps = random.randint(0, const.NO_OP_MAX_STEPS)
     for t in count():
-        action = utils.select_action(state, steps_done, num_actions, deep_q_learning_wrapper.policy_net, device)
-        steps_done += 1
+        if t < no_op_steps:
+            action = torch.tensor([[random.randrange(num_actions)]], device=device, dtype=torch.long)
+            _, _, done, _ = env.step(action.item())
+            if done:
+                break
+
+            continue
+
+        if t % const.ACTION_REPETITIONS != 0:
+            _, _, done, _ = env.step(action.item())
+            if done:
+                break
+
+            continue
+
+        writer.add_scalar("Hyperparam/Epsilon", utils.schedule_epsilon(steps_done), steps_done)
+        action = utils.select_action(state_tensor, steps_done, num_actions, deep_q_learning_wrapper.policy_net, device)
         _, reward, done, _ = env.step(action.item())
         reward = torch.tensor([reward], device=device)
+        steps_done += 1
 
-        last_screen = current_screen
-        current_screen = utils.get_screen(env)
-
-        next_state = None
+        next_observation = utils.get_screen(env)
+        next_state_tensor = None
         if not done:
-            next_state = current_screen - last_screen
+            next_state = state.copy()
+            next_state.append(next_observation)
+            next_state_tensor = torch.stack(tuple(next_state), dim=1)
+            state_tensor = next_state_tensor
+            state = next_state.copy()
 
-        deep_q_learning_wrapper.replay_buffer.push(state, action, next_state, reward)
-        state = next_state
-        deep_q_learning_wrapper.optimize_model()
+        deep_q_learning_wrapper.replay_buffer.push(state_tensor, action, next_state_tensor, reward)
+        deep_q_learning_wrapper.optimize_model(steps_done)
 
         if steps_done % const.TARGET_UPDATE == 0:
             print(f"UPDATE TARGET NETWORK after {steps_done} STEPS")
             deep_q_learning_wrapper.update_target_network()
 
         if done:
-            episode_durations.append(t + 1)
-            utils.plot_durations(episode_durations)
+            writer.add_scalar("Episode/Return", t + 1, steps_done)
             break
 
 print("Complete")
