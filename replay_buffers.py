@@ -36,7 +36,24 @@ class ExperienceReplay(ReplayBuffer):
         super().__init__(buffer_length, batch_size, n_steps)
 
     def push(self, *args):
-        self.buffer.append(utils.Transition(*args))
+        one_step_transition = utils.Transition(*args)
+        self.n_step_buffer.append(one_step_transition)
+        if len(self.n_step_buffer) < self.n_steps:
+            return
+
+        n_step_transition = utils.Transition(
+            *(
+                self.n_step_buffer[0].state,
+                self.n_step_buffer[0].action,
+                one_step_transition.next_state,
+                utils.compute_cumulated_return(self.n_step_buffer),
+            )
+        )
+
+        if one_step_transition.next_state is None:
+            self.n_step_buffer = deque([], maxlen=self.n_steps)
+
+        self.buffer.append(n_step_transition)
 
     def sample(self) -> Tuple[List, np.array, np.array]:
         sample_indices = np.random.choice(len(self.buffer), size=self.batch_size)
@@ -95,6 +112,7 @@ class PrioritizedExperienceReplay(ReplayBuffer):
                 utils.compute_cumulated_return(self.n_step_buffer),
             )
         )
+
         if one_step_transition.next_state is None:
             self.n_step_buffer = deque([], maxlen=self.n_steps)
 
