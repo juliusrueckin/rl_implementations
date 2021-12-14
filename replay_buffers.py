@@ -18,22 +18,23 @@ class ReplayBuffer:
     def step(self):
         pass
 
-    def push(self, *args):
-        raise NotImplementedError("Replay buffer does not implement 'push()' method!")
+    def clear_n_step_buffer(self):
+        for trans_id in range(1, len(self.n_step_buffer)):
+            self.add_new_priority()
+            n_step_transition = utils.Transition(
+                *(
+                    self.n_step_buffer[trans_id].state,
+                    self.n_step_buffer[trans_id].action,
+                    None,
+                    utils.compute_cumulated_return(self.n_step_buffer),
+                )
+            )
+            self.buffer.append(n_step_transition)
 
-    def sample(self) -> Tuple[List, np.array, np.array]:
-        raise NotImplementedError("Replay buffer does not implement 'sample()' method!")
+        self.n_step_buffer = deque([], maxlen=self.n_steps)
 
-    def update(self, indices: np.array, priorities: np.array):
+    def add_new_priority(self):
         pass
-
-    def __len__(self):
-        return len(self.buffer)
-
-
-class ExperienceReplay(ReplayBuffer):
-    def __init__(self, buffer_length: int = 10000, batch_size: int = 32, n_steps: int = 3):
-        super().__init__(buffer_length, batch_size, n_steps)
 
     def push(self, *args):
         one_step_transition = utils.Transition(*args)
@@ -50,18 +51,30 @@ class ExperienceReplay(ReplayBuffer):
             )
         )
 
-        if one_step_transition.next_state is None:
-            self.n_step_buffer = deque([], maxlen=self.n_steps)
-
+        self.add_new_priority()
         self.buffer.append(n_step_transition)
+
+        if one_step_transition.next_state is None:
+            self.clear_n_step_buffer()
+
+    def sample(self) -> Tuple[List, np.array, np.array]:
+        raise NotImplementedError("Replay buffer does not implement 'sample()' method!")
+
+    def update(self, indices: np.array, priorities: np.array):
+        pass
+
+    def __len__(self):
+        return len(self.buffer)
+
+
+class ExperienceReplay(ReplayBuffer):
+    def __init__(self, buffer_length: int = 10000, batch_size: int = 32, n_steps: int = 3):
+        super().__init__(buffer_length, batch_size, n_steps)
 
     def sample(self) -> Tuple[List, np.array, np.array]:
         sample_indices = np.random.choice(len(self.buffer), size=self.batch_size)
         sample_transitions = [self.buffer[i] for i in sample_indices]
         return sample_transitions, sample_indices, np.ones(len(self.buffer))
-
-    def __len__(self):
-        return len(self.buffer)
 
 
 class PrioritizedExperienceReplay(ReplayBuffer):
@@ -98,32 +111,13 @@ class PrioritizedExperienceReplay(ReplayBuffer):
 
         return sample_transitions, sample_indices, weights
 
-    def push(self, *args):
-        one_step_transition = utils.Transition(*args)
-        self.n_step_buffer.append(one_step_transition)
-        if len(self.n_step_buffer) < self.n_steps:
-            return
-
-        n_step_transition = utils.Transition(
-            *(
-                self.n_step_buffer[0].state,
-                self.n_step_buffer[0].action,
-                one_step_transition.next_state,
-                utils.compute_cumulated_return(self.n_step_buffer),
-            )
-        )
-
-        if one_step_transition.next_state is None:
-            self.n_step_buffer = deque([], maxlen=self.n_steps)
-
+    def add_new_priority(self):
         if len(self.buffer) == 0:
             self.priorities.append(1.0)
         else:
             self.priorities.append(np.max(np.array(self.priorities)))
             priorities_tmp = np.array(self.priorities)
             self.priorities = deque(priorities_tmp, maxlen=self.buffer_length)
-
-        self.buffer.append(n_step_transition)
 
     def update(self, indices: np.array, priorities: np.array):
         priorities_tmp = np.array(self.priorities)

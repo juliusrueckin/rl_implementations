@@ -2,7 +2,6 @@ import random
 from collections import namedtuple, deque
 from typing import List, Union
 
-import matplotlib.pyplot as plt
 import numpy as np
 import torch
 from PIL import Image
@@ -59,23 +58,6 @@ def select_action(state: torch.tensor, steps_done: int, num_actions: int, policy
             return policy_net(state).max(1)[1].view(1, 1)
 
     return torch.tensor([[random.randrange(num_actions)]], device=device, dtype=torch.long)
-
-
-def plot_durations(episode_durations: List):
-    plt.figure(2)
-    plt.clf()
-    durations_t = torch.tensor(episode_durations, dtype=torch.float)
-    plt.title("Training...")
-    plt.xlabel("Episode")
-    plt.ylabel("Duration")
-    plt.plot(durations_t.numpy())
-
-    if len(durations_t) >= 100:
-        means = durations_t.unfold(0, 100, 1).mean(1).view(-1)
-        means = torch.cat((torch.zeros(99), means))
-        plt.plot(means.numpy())
-
-    plt.pause(0.001)
 
 
 def compute_cumulated_return(rewards: Union[List, deque]) -> float:
