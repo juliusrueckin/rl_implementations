@@ -16,7 +16,12 @@ class DeepQLearningBaseWrapper:
         self.writer = writer
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.replay_buffer = PrioritizedExperienceReplay(
-            const.REPLAY_BUFFER_LEN, const.BATCH_SIZE, const.ALPHA, const.BETA0, const.REPLAY_DELAY
+            const.REPLAY_BUFFER_LEN,
+            const.BATCH_SIZE,
+            const.N_STEP_RETURNS,
+            const.ALPHA,
+            const.BETA0,
+            const.REPLAY_DELAY,
         )
 
         self.policy_net = DQN(screen_width, screen_height, num_actions).to(self.device)
@@ -150,7 +155,10 @@ class DeepQLearningWrapper(DeepQLearningBaseWrapper):
     ) -> Tuple[torch.tensor, torch.tensor]:
         next_state_action_values = torch.zeros(const.BATCH_SIZE, device=self.device)
         next_state_action_values[non_final_mask] = self.target_net(non_final_next_states).max(1)[0].detach()
-        return reward_batch + const.GAMMA * next_state_action_values, next_state_action_values
+        return (
+            reward_batch + np.power(const.GAMMA, const.N_STEP_RETURNS) * next_state_action_values,
+            next_state_action_values,
+        )
 
 
 class DoubleDeepQLearningWrapper(DeepQLearningBaseWrapper):
@@ -169,4 +177,7 @@ class DoubleDeepQLearningWrapper(DeepQLearningBaseWrapper):
                 self.target_net(non_final_next_states).gather(1, next_state_action_indices).view(-1)
             )
 
-            return reward_batch + const.GAMMA * next_state_action_values, next_state_action_values
+            return (
+                reward_batch + np.power(const.GAMMA, const.N_STEP_RETURNS) * next_state_action_values,
+                next_state_action_values,
+            )

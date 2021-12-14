@@ -1,6 +1,6 @@
 import random
-from collections import namedtuple
-from typing import List
+from collections import namedtuple, deque
+from typing import List, Union
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -76,3 +76,7 @@ def plot_durations(episode_durations: List):
         plt.plot(means.numpy())
 
     plt.pause(0.001)
+
+
+def compute_cumulated_return(rewards: Union[List, deque]) -> float:
+    return sum([np.power(const.GAMMA, i) * transition.reward for i, transition in enumerate(rewards)])
