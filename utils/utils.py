@@ -8,7 +8,7 @@ from PIL import Image
 from torchvision import transforms as T
 
 import constants as const
-from networks.q_networks import DQN
+from networks.q_networks import DQN, DuelingDQN
 
 Transition = namedtuple("Transition", ("state", "action", "next_state", "reward"))
 transform = T.Compose(
@@ -48,12 +48,17 @@ def get_screen(env) -> torch.Tensor:
 
 
 def schedule_epsilon(steps_done: int) -> float:
+    if const.NOISY_NETS:
+        return 0
+
     return max(const.EPS_END, const.EPS_START - steps_done * (const.EPS_START - const.EPS_END) / const.EPS_DECAY)
 
 
-def select_action(state: torch.tensor, steps_done: int, num_actions: int, policy_net: DQN, device: torch.device):
+def select_action(
+    state: torch.tensor, steps_done: int, num_actions: int, policy_net: Union[DQN, DuelingDQN], device: torch.device
+):
     eps_threshold = schedule_epsilon(steps_done)
-    if random.random() > eps_threshold or steps_done > const.MIN_START_STEPS:
+    if random.random() > eps_threshold and steps_done > const.MIN_START_STEPS:
         with torch.no_grad():
             return policy_net(state).max(1)[1].view(1, 1)
 

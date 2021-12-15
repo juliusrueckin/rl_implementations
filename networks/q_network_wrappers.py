@@ -26,8 +26,22 @@ class DeepQLearningBaseWrapper:
             const.REPLAY_DELAY,
         )
 
-        self.policy_net = get_network(network_name, screen_width, screen_height, num_actions).to(self.device)
-        self.target_net = get_network(network_name, screen_width, screen_height, num_actions).to(self.device)
+        self.policy_net = get_network(
+            network_name,
+            screen_width,
+            screen_height,
+            num_actions,
+            const.NOISY_NETS,
+            const.NOISY_SIGMA_INIT,
+        ).to(self.device)
+        self.target_net = get_network(
+            network_name,
+            screen_width,
+            screen_height,
+            num_actions,
+            const.NOISY_NETS,
+            const.NOISY_SIGMA_INIT,
+        ).to(self.device)
         self.target_net.load_state_dict(self.policy_net.state_dict())
         self.target_net.eval()
 
@@ -87,6 +101,9 @@ class DeepQLearningBaseWrapper:
 
         self.replay_buffer.step()
         self.replay_buffer.update(indices, (td_errors + 1e-8).view(-1).data.cpu().numpy())
+
+        self.policy_net.reset_noisy_layers()
+        self.target_net.reset_noisy_layers()
 
         return weighted_loss
 
