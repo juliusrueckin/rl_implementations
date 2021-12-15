@@ -6,13 +6,15 @@ from torch import nn
 from torch.utils.tensorboard import SummaryWriter
 
 import constants as const
-from networks.q_networks import DuelingDQN
+from networks import get_network
 from replay_buffers import PrioritizedExperienceReplay
 from utils import utils
 
 
 class DeepQLearningBaseWrapper:
-    def __init__(self, screen_width: int, screen_height: int, num_actions: int, writer: SummaryWriter = None):
+    def __init__(
+        self, screen_width: int, screen_height: int, num_actions: int, network_name: str, writer: SummaryWriter = None
+    ):
         self.writer = writer
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.replay_buffer = PrioritizedExperienceReplay(
@@ -24,8 +26,8 @@ class DeepQLearningBaseWrapper:
             const.REPLAY_DELAY,
         )
 
-        self.policy_net = DuelingDQN(screen_width, screen_height, num_actions).to(self.device)
-        self.target_net = DuelingDQN(screen_width, screen_height, num_actions).to(self.device)
+        self.policy_net = get_network(network_name, screen_width, screen_height, num_actions).to(self.device)
+        self.target_net = get_network(network_name, screen_width, screen_height, num_actions).to(self.device)
         self.target_net.load_state_dict(self.policy_net.state_dict())
         self.target_net.eval()
 
@@ -147,8 +149,10 @@ class DeepQLearningBaseWrapper:
 
 
 class DeepQLearningWrapper(DeepQLearningBaseWrapper):
-    def __init__(self, screen_width: int, screen_height: int, num_actions: int, writer: SummaryWriter = None):
-        super().__init__(screen_width, screen_height, num_actions, writer)
+    def __init__(
+        self, screen_width: int, screen_height: int, num_actions: int, network_name: str, writer: SummaryWriter = None
+    ):
+        super().__init__(screen_width, screen_height, num_actions, network_name, writer)
 
     def get_td_targets(
         self, reward_batch: torch.tensor, non_final_next_states: torch.tensor, non_final_mask: torch.tensor
@@ -162,8 +166,10 @@ class DeepQLearningWrapper(DeepQLearningBaseWrapper):
 
 
 class DoubleDeepQLearningWrapper(DeepQLearningBaseWrapper):
-    def __init__(self, screen_width: int, screen_height: int, num_actions: int, writer: SummaryWriter = None):
-        super().__init__(screen_width, screen_height, num_actions, writer)
+    def __init__(
+        self, screen_width: int, screen_height: int, num_actions: int, network_name: str, writer: SummaryWriter = None
+    ):
+        super().__init__(screen_width, screen_height, num_actions, network_name, writer)
 
     def get_td_targets(
         self, reward_batch: torch.tensor, non_final_next_states: torch.tensor, non_final_mask: torch.tensor

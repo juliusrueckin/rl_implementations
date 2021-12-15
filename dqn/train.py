@@ -20,7 +20,7 @@ init_screen = utils.get_screen(env)
 _, screen_height, screen_width = init_screen.shape
 num_actions = env.action_space.n
 
-deep_q_learning_wrapper = DeepQLearningWrapper(screen_width, screen_height, num_actions, writer)
+deep_q_learning_wrapper = DeepQLearningWrapper(screen_width, screen_height, num_actions, const.NETWORK_NAME, writer)
 
 steps_done = 0
 
