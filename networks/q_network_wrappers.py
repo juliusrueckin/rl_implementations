@@ -51,6 +51,9 @@ class DeepQLearningBaseWrapper:
     def update_target_network(self):
         self.target_net.load_state_dict(self.policy_net.state_dict())
 
+    def update_policy_net_eval(self):
+        pass
+
     def prepare_batch_data(
         self,
     ) -> Tuple[torch.tensor, torch.tensor, torch.tensor, torch.tensor, torch.tensor, torch.tensor, torch.tensor]:
@@ -104,6 +107,7 @@ class DeepQLearningBaseWrapper:
 
         self.policy_net.reset_noisy_layers()
         self.target_net.reset_noisy_layers()
+        self.update_policy_net_eval()
 
         return weighted_loss
 
@@ -188,11 +192,28 @@ class DoubleDeepQLearningWrapper(DeepQLearningBaseWrapper):
     ):
         super().__init__(screen_width, screen_height, num_actions, network_name, writer)
 
+        self.policy_net_eval = get_network(
+            network_name,
+            screen_width,
+            screen_height,
+            num_actions,
+            const.NOISY_NETS,
+            const.NOISY_SIGMA_INIT,
+        ).to(self.device)
+        self.policy_net_eval.load_state_dict(self.policy_net.state_dict())
+        self.policy_net_eval.eval()
+
+    def update_policy_net_eval(self):
+        self.policy_net_eval.load_state_dict(self.policy_net.state_dict())
+
     def get_td_targets(
         self, reward_batch: torch.tensor, non_final_next_states: torch.tensor, non_final_mask: torch.tensor
     ) -> Tuple[torch.tensor, torch.tensor]:
         with torch.no_grad():
-            next_state_action_indices = self.policy_net(non_final_next_states).max(1)[1].detach()
+            if const.NOISY_NETS:
+                self.policy_net_eval.reset_noisy_layers()
+
+            next_state_action_indices = self.policy_net_eval(non_final_next_states).max(1)[1].detach()
             next_state_action_indices = next_state_action_indices.view(next_state_action_indices.size(0), 1)
 
             next_state_action_values = torch.zeros(const.BATCH_SIZE, device=self.device)
