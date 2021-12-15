@@ -6,7 +6,7 @@ from torch import nn
 from torch.utils.tensorboard import SummaryWriter
 
 import constants as const
-from networks.q_networks import DQN
+from networks.q_networks import DuelingDQN
 from replay_buffers import PrioritizedExperienceReplay
 from utils import utils
 
@@ -24,8 +24,8 @@ class DeepQLearningBaseWrapper:
             const.REPLAY_DELAY,
         )
 
-        self.policy_net = DQN(screen_width, screen_height, num_actions).to(self.device)
-        self.target_net = DQN(screen_width, screen_height, num_actions).to(self.device)
+        self.policy_net = DuelingDQN(screen_width, screen_height, num_actions).to(self.device)
+        self.target_net = DuelingDQN(screen_width, screen_height, num_actions).to(self.device)
         self.target_net.load_state_dict(self.policy_net.state_dict())
         self.target_net.eval()
 
