@@ -26,7 +26,7 @@ class ReplayBuffer:
                     self.n_step_buffer[trans_id].state,
                     self.n_step_buffer[trans_id].action,
                     None,
-                    utils.compute_cumulated_return(self.n_step_buffer),
+                    utils.compute_cumulated_return(list(self.n_step_buffer)[trans_id:]),
                 )
             )
             self.buffer.append(n_step_transition)
