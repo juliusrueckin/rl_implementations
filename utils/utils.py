@@ -60,7 +60,11 @@ def select_action(
     eps_threshold = schedule_epsilon(steps_done)
     if random.random() > eps_threshold and steps_done > const.MIN_START_STEPS:
         with torch.no_grad():
-            return policy_net(state.to(device)).max(1)[1].view(1, 1)
+            if const.NUM_ATOMS == 1:
+                return policy_net(state.to(device)).max(1)[1].view(1, 1)
+
+            q_values_dist = policy_net(state.to(device)) * torch.linspace(const.V_MIN, const.V_MAX, const.NUM_ATOMS)
+            return q_values_dist.sum(2).max(1)[1].view(1, 1)
 
     return torch.tensor([[random.randrange(num_actions)]], device=device, dtype=torch.long)
 
