@@ -104,6 +104,38 @@ class DeepQLearningBaseWrapper:
     ) -> Tuple[torch.tensor, torch.tensor]:
         raise NotImplementedError("Deep Q-Learning wrapper does not implement 'get_td_targets()' function!")
 
+    @staticmethod
+    def get_distributional_td_targets(
+        reward_batch: torch.tensor, next_state_action_values: torch.tensor
+    ) -> torch.tensor:
+        delta_z = float(const.V_MAX - const.V_MIN) / (const.NUM_ATOMS - 1)
+        support = torch.linspace(const.V_MIN, const.V_MAX, const.NUM_ATOMS)
+
+        rewards = reward_batch.unsqueeze(1).expand_as(next_state_action_values)
+        support = support.unsqueeze(0).expand_as(next_state_action_values)
+        Tz = rewards + np.power(const.GAMMA, const.N_STEP_RETURNS) * support
+        Tz = Tz.clamp(min=const.V_MIN, max=const.V_MAX)
+
+        b = (Tz - const.V_MIN) / delta_z
+        lower = b.floor().long()
+        upper = b.ceil().long()
+        offset = (
+            torch.linspace(0, (reward_batch.size(0) - 1) * const.NUM_ATOMS, reward_batch.size(0))
+            .long()
+            .unsqueeze(1)
+            .expand(reward_batch.size(0), const.NUM_ATOMS)
+        )
+
+        proj_td_targets = torch.zeros(next_state_action_values.size())
+        proj_td_targets.view(-1).index_add_(
+            0, (lower + offset).view(-1), (next_state_action_values * (upper.float() - b)).view(-1)
+        )
+        proj_td_targets.view(-1).index_add_(
+            0, (upper + offset).view(-1), (next_state_action_values * (b - lower.float())).view(-1)
+        )
+
+        return proj_td_targets
+
     def optimization_step(
         self, estimated_q_values: torch.tensor, td_targets: torch.tensor, weights: np.array, indices: np.array
     ):
@@ -202,9 +234,7 @@ class DeepQLearningWrapper(DeepQLearningBaseWrapper):
                 next_state_action_values,
             )
 
-        delta_z = float(const.V_MAX - const.V_MIN) / (const.NUM_ATOMS - 1)
         support = torch.linspace(const.V_MIN, const.V_MAX, const.NUM_ATOMS)
-
         next_state_action_values = torch.zeros(
             (reward_batch.size(0), self.num_actions, const.NUM_ATOMS), device=self.device
         )
@@ -214,33 +244,10 @@ class DeepQLearningWrapper(DeepQLearningBaseWrapper):
         next_actions = next_actions.unsqueeze(1).unsqueeze(1).expand(reward_batch.size(0), 1, const.NUM_ATOMS)
         next_state_action_values = next_state_action_values.gather(1, next_actions).squeeze(1)
 
-        rewards = reward_batch.unsqueeze(1).expand_as(next_state_action_values)
-        support = support.unsqueeze(0).expand_as(next_state_action_values)
-        Tz = rewards + np.power(const.GAMMA, const.N_STEP_RETURNS) * support
-        Tz = Tz.clamp(min=const.V_MIN, max=const.V_MAX)
+        projected_td_targets = self.get_distributional_td_targets(reward_batch, next_state_action_values)
+        expected_q_values = (projected_td_targets * support).sum(1)
 
-        b = (Tz - const.V_MIN) / delta_z
-        lower = b.floor().long()
-        upper = b.ceil().long()
-        offset = (
-            torch.linspace(0, (reward_batch.size(0) - 1) * const.NUM_ATOMS, reward_batch.size(0))
-            .long()
-            .unsqueeze(1)
-            .expand(reward_batch.size(0), const.NUM_ATOMS)
-        )
-
-        proj_next_state_action_values = torch.zeros(next_state_action_values.size())
-        proj_next_state_action_values.view(-1).index_add_(
-            0, (lower + offset).view(-1), (next_state_action_values * (upper.float() - b)).view(-1)
-        )
-        proj_next_state_action_values.view(-1).index_add_(
-            0, (upper + offset).view(-1), (next_state_action_values * (b - lower.float())).view(-1)
-        )
-        expected_q_values = (
-            proj_next_state_action_values * torch.linspace(const.V_MIN, const.V_MAX, const.NUM_ATOMS)
-        ).sum(1)
-
-        return proj_next_state_action_values, expected_q_values
+        return projected_td_targets, expected_q_values
 
 
 class DoubleDeepQLearningWrapper(DeepQLearningBaseWrapper):
@@ -287,42 +294,17 @@ class DoubleDeepQLearningWrapper(DeepQLearningBaseWrapper):
                     next_state_action_values,
                 )
 
-            delta_z = float(const.V_MAX - const.V_MIN) / (const.NUM_ATOMS - 1)
-            support = torch.linspace(const.V_MIN, const.V_MAX, const.NUM_ATOMS)
-
             next_actions = self.policy_net_eval(non_final_next_states).sum(2).max(1)[1].detach()
             next_actions = next_actions.unsqueeze(1).unsqueeze(1).expand(next_actions.size(0), 1, const.NUM_ATOMS)
 
+            support = torch.linspace(const.V_MIN, const.V_MAX, const.NUM_ATOMS)
             next_state_action_values = torch.zeros((reward_batch.size(0), 1, const.NUM_ATOMS), device=self.device)
             next_state_action_values[non_final_mask] = (
                 self.target_net(non_final_next_states).data.cpu() * support
             ).gather(1, next_actions)
             next_state_action_values = next_state_action_values.squeeze(1)
 
-            rewards = reward_batch.unsqueeze(1).expand_as(next_state_action_values)
-            support = support.unsqueeze(0).expand_as(next_state_action_values)
-            Tz = rewards + np.power(const.GAMMA, const.N_STEP_RETURNS) * support
-            Tz = Tz.clamp(min=const.V_MIN, max=const.V_MAX)
+            projected_td_targets = self.get_distributional_td_targets(reward_batch, next_state_action_values)
+            expected_q_values = (projected_td_targets * support).sum(1)
 
-            b = (Tz - const.V_MIN) / delta_z
-            lower = b.floor().long()
-            upper = b.ceil().long()
-            offset = (
-                torch.linspace(0, (reward_batch.size(0) - 1) * const.NUM_ATOMS, reward_batch.size(0))
-                .long()
-                .unsqueeze(1)
-                .expand(reward_batch.size(0), const.NUM_ATOMS)
-            )
-
-            proj_next_state_action_values = torch.zeros(next_state_action_values.size())
-            proj_next_state_action_values.view(-1).index_add_(
-                0, (lower + offset).view(-1), (next_state_action_values * (upper.float() - b)).view(-1)
-            )
-            proj_next_state_action_values.view(-1).index_add_(
-                0, (upper + offset).view(-1), (next_state_action_values * (b - lower.float())).view(-1)
-            )
-            expected_q_values = (
-                proj_next_state_action_values * torch.linspace(const.V_MIN, const.V_MAX, const.NUM_ATOMS)
-            ).sum(1)
-
-            return proj_next_state_action_values, expected_q_values
+            return projected_td_targets, expected_q_values
