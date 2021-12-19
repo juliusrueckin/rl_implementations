@@ -10,5 +10,5 @@ This repository reimplements the most popular reinforcement learning algorithms 
 - Multi-step learning with n-step TD-targets ([Sutton and Barto, Chapter 7.1](https://web.stanford.edu/class/psych209/Readings/SuttonBartoIPRLBook2ndEd.pdf))
 - Dueling network architectures ([Dueling DDQN](https://arxiv.org/pdf/1511.06581v3.pdf))
 - Noisy networks for exploration ([Noisy Nets](https://arxiv.org/pdf/1706.10295v3.pdf))
+- Distributional Perspective on Reinforcement Learning ([Distributional RL](http://proceedings.mlr.press/v70/bellemare17a/bellemare17a.pdf))
 - Atari tricks: frame stacking, action repetitions, no-ops actions
-
