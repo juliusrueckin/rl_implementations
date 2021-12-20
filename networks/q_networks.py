@@ -35,11 +35,11 @@ class DQN(nn.Module):
         x = self.fc(x.view(x.size(0), -1))
         x = self.head(x)
 
-        if self.num_atoms:
+        if self.num_atoms == 1:
             return F.softplus(x)
 
         x = x.view(x.size(0), self.num_actions, self.num_atoms)
-        return F.softmax(x.view(-1, self.num_atoms), dim=-1).view(-1, self.num_actions, self.num_atoms)
+        return F.softmax(x, dim=2)
 
     def reset_noisy_layers(self):
         if not self.noisy_net:
@@ -99,7 +99,7 @@ class DuelingDQN(nn.Module):
         x_advantages = x_advantages.view(x_advantages.size(0), self.num_actions, self.num_atoms)
         x = x_value + x_advantages - x_advantages.mean(1, keepdim=True)
 
-        return F.softmax(x.view(-1, self.num_atoms), dim=-1).view(-1, self.num_actions, self.num_atoms)
+        return F.softmax(x, dim=2)
 
     def reset_noisy_layers(self):
         if not self.noisy_net:

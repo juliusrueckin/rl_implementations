@@ -228,17 +228,17 @@ class DeepQLearningWrapper(DeepQLearningBaseWrapper):
         self, reward_batch: torch.tensor, non_final_next_states: torch.tensor, non_final_mask: torch.tensor
     ) -> Tuple[torch.tensor, torch.tensor]:
         if const.NUM_ATOMS == 1:
-            next_q_value_dists = torch.zeros(reward_batch.size(0), device=self.device)
-            next_q_value_dists[non_final_mask] = self.target_net(non_final_next_states).max(1)[0].detach()
+            next_state_action_values = torch.zeros(reward_batch.size(0), device=self.device)
+            next_state_action_values[non_final_mask] = self.target_net(non_final_next_states).max(1)[0].detach()
             return (
-                (reward_batch + np.power(const.GAMMA, const.N_STEP_RETURNS) * next_q_value_dists).unsqueeze(1),
-                next_q_value_dists,
+                (reward_batch + np.power(const.GAMMA, const.N_STEP_RETURNS) * next_state_action_values).unsqueeze(1),
+                next_state_action_values,
             )
 
         next_q_value_dists = torch.zeros((reward_batch.size(0), self.num_actions, const.NUM_ATOMS), device=self.device)
         next_q_value_dists[non_final_mask] = self.target_net(non_final_next_states)
 
-        next_actions = next_q_value_dists.sum(2).max(1)[1]
+        next_actions = (next_q_value_dists * torch.linspace(const.V_MIN, const.V_MAX, const.NUM_ATOMS)).sum(2).max(1)[1]
         next_actions = next_actions.unsqueeze(1).unsqueeze(1).expand(reward_batch.size(0), 1, const.NUM_ATOMS)
         next_q_value_dists = next_q_value_dists.gather(1, next_actions).squeeze(1)
 
@@ -291,16 +291,21 @@ class DoubleDeepQLearningWrapper(DeepQLearningBaseWrapper):
                     next_state_action_values,
                 )
 
-            next_actions = self.policy_net_eval(non_final_next_states).sum(2).max(1)[1].detach()
+            next_actions = (
+                (
+                    self.policy_net_eval(non_final_next_states)
+                    * torch.linspace(const.V_MIN, const.V_MAX, const.NUM_ATOMS)
+                )
+                .sum(2)
+                .max(1)[1]
+                .detach()
+            )
             next_actions = next_actions.unsqueeze(1).unsqueeze(1).expand(next_actions.size(0), 1, const.NUM_ATOMS)
 
-            support = torch.linspace(const.V_MIN, const.V_MAX, const.NUM_ATOMS)
-            next_state_action_values = torch.zeros((reward_batch.size(0), 1, const.NUM_ATOMS), device=self.device)
-            next_state_action_values[non_final_mask] = (
-                self.target_net(non_final_next_states).data.cpu() * support
-            ).gather(1, next_actions)
-            next_state_action_values = next_state_action_values.squeeze(1)
+            next_q_value_dists = torch.zeros((reward_batch.size(0), 1, const.NUM_ATOMS), device=self.device)
+            next_q_value_dists[non_final_mask] = self.target_net(non_final_next_states).gather(1, next_actions)
+            next_q_value_dists = next_q_value_dists.squeeze(1)
 
-            projected_td_targets = self.get_distributional_td_targets(reward_batch, next_state_action_values)
+            projected_td_targets = self.get_distributional_td_targets(reward_batch, next_q_value_dists)
 
-            return projected_td_targets, self.get_expected_values(next_state_action_values)
+            return projected_td_targets, self.get_expected_values(next_q_value_dists)
