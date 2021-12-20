@@ -48,15 +48,15 @@ class DeepQLearningBaseWrapper:
         self.target_net.load_state_dict(self.policy_net.state_dict())
         self.target_net.eval()
 
-        self.loss_fn = self.get_loss_fn()
         self.optimizer = torch.optim.Adam(self.policy_net.parameters(), lr=const.LEARNING_RATE)
 
     @staticmethod
-    def get_loss_fn():
+    def get_loss(estimated_q_values: torch.tensor, td_targets: torch.tensor) -> torch.tensor:
         if const.NUM_ATOMS == 1:
-            return nn.SmoothL1Loss(reduction="none")
+            loss_fn = nn.SmoothL1Loss(reduction="none")
+            return loss_fn(estimated_q_values, td_targets)
 
-        return nn.CrossEntropyLoss(reduction="none")
+        return -(td_targets * torch.log(estimated_q_values)).sum(1)
 
     def update_target_network(self):
         self.target_net.load_state_dict(self.policy_net.state_dict())
@@ -96,7 +96,6 @@ class DeepQLearningBaseWrapper:
 
         q_value_dist = self.policy_net(state_batch)
         action_batch = action_batch.unsqueeze(1).expand(action_batch.size(0), 1, const.NUM_ATOMS)
-
         return q_value_dist.gather(1, action_batch).squeeze(1)
 
     def get_td_targets(
@@ -110,12 +109,13 @@ class DeepQLearningBaseWrapper:
 
         rewards = reward_batch.unsqueeze(1).expand_as(next_q_value_dists)
         support = torch.linspace(const.V_MIN, const.V_MAX, const.NUM_ATOMS).unsqueeze(0).expand_as(next_q_value_dists)
+
         Tz = rewards + np.power(const.GAMMA, const.N_STEP_RETURNS) * support
         Tz = Tz.clamp(min=const.V_MIN, max=const.V_MAX)
-
         b = (Tz - const.V_MIN) / delta_z
         lower = b.floor().long()
         upper = b.ceil().long()
+
         offset = (
             torch.linspace(0, (reward_batch.size(0) - 1) * const.NUM_ATOMS, reward_batch.size(0))
             .long()
@@ -136,7 +136,7 @@ class DeepQLearningBaseWrapper:
     def optimization_step(
         self, estimated_q_values: torch.tensor, td_targets: torch.tensor, weights: np.array, indices: np.array
     ):
-        td_errors = self.loss_fn(estimated_q_values, td_targets)
+        td_errors = self.get_loss(estimated_q_values, td_targets)
         weighted_losses = weights * td_errors
         weighted_loss = weighted_losses.mean()
         self.optimizer.zero_grad()
@@ -298,7 +298,6 @@ class DoubleDeepQLearningWrapper(DeepQLearningBaseWrapper):
                 )
                 .sum(2)
                 .max(1)[1]
-                .detach()
             )
             next_actions = next_actions.unsqueeze(1).unsqueeze(1).expand(next_actions.size(0), 1, const.NUM_ATOMS)
 
