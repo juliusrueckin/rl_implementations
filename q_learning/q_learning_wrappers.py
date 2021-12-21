@@ -1,3 +1,5 @@
+import os
+from collections import deque
 from typing import Tuple
 
 import numpy as np
@@ -49,6 +51,18 @@ class DeepQLearningBaseWrapper:
         self.target_net.eval()
 
         self.optimizer = torch.optim.Adam(self.policy_net.parameters(), lr=const.LEARNING_RATE)
+
+        self.episode_returns = deque([], maxlen=const.EPISODES_PATIENCE)
+        self.max_mean_episode_return = -np.inf
+
+    def episode_terminated(self, episode_return: float, steps_done: int):
+        self.writer.add_scalar("Episode/Return", episode_return, steps_done)
+        self.episode_returns.append(episode_return)
+        running_mean_return = sum(self.episode_returns) / len(self.episode_returns)
+        if len(self.episode_returns) >= const.EPISODES_PATIENCE and running_mean_return > self.max_mean_episode_return:
+            self.max_mean_episode_return = running_mean_return
+            best_model_file_path = os.path.join(const.LOG_DIR, "best_policy_net.pth")
+            torch.save(self.policy_net, best_model_file_path)
 
     @staticmethod
     def get_loss(estimated_q_values: torch.tensor, td_targets: torch.tensor) -> torch.tensor:

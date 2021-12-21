@@ -32,6 +32,7 @@ for i in range(const.NUM_EPISODES):
     state.append(observation)
     state_tensor = torch.stack(tuple(state), dim=1)
 
+    episode_return = 0
     no_op_steps = random.randint(0, const.NO_OP_MAX_STEPS)
     for t in count():
         if t < no_op_steps:
@@ -52,6 +53,7 @@ for i in range(const.NUM_EPISODES):
         writer.add_scalar("Hyperparam/Epsilon", utils.schedule_epsilon(steps_done), steps_done)
         action = utils.select_action(state_tensor, steps_done, num_actions, deep_q_learning_wrapper.policy_net, device)
         _, reward, done, _ = env.step(action.item())
+        episode_return += reward
         reward = torch.tensor([reward], device=device)
         steps_done += 1
 
@@ -72,7 +74,7 @@ for i in range(const.NUM_EPISODES):
             deep_q_learning_wrapper.update_target_network()
 
         if done:
-            writer.add_scalar("Episode/Return", t + 1, steps_done)
+            deep_q_learning_wrapper.episode_terminated(episode_return, steps_done)
             break
 
 print("Complete")
