@@ -7,7 +7,7 @@ import torch
 from torch.utils.tensorboard import SummaryWriter
 
 import constants as const
-from networks.q_network_wrappers import DeepQLearningWrapper
+from q_learning import get_q_learning_wrapper
 from utils import utils
 
 writer = SummaryWriter(log_dir=const.LOG_DIR)
@@ -19,10 +19,11 @@ env.reset()
 init_screen = utils.get_screen(env)
 _, screen_height, screen_width = init_screen.shape
 num_actions = env.action_space.n
-
-deep_q_learning_wrapper = DeepQLearningWrapper(screen_width, screen_height, num_actions, const.NETWORK_NAME, writer)
-
 steps_done = 0
+
+deep_q_learning_wrapper = get_q_learning_wrapper(
+    const.DOUBLE_Q_LEARNING, screen_width, screen_height, num_actions, const.NETWORK_NAME, writer
+)
 
 for i in range(const.NUM_EPISODES):
     env.reset()
