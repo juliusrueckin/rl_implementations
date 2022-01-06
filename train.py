@@ -13,7 +13,7 @@ from utils import utils
 writer = SummaryWriter(log_dir=const.LOG_DIR)
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-env = gym.make(const.ENV_NAME).unwrapped
+env = gym.make(const.ENV_NAME)
 env.reset()
 
 init_screen = utils.get_screen(env)

@@ -95,11 +95,12 @@ class DeepQLearningBaseWrapper:
             torch.cat(batch.reward),
         )
 
-        state_batch, action_batch, reward_batch, non_final_mask = (
+        state_batch, action_batch, reward_batch, non_final_mask, non_final_next_states = (
             state_batch.to(self.device),
             action_batch.to(self.device),
             reward_batch.to(self.device),
             non_final_mask.to(self.device),
+            non_final_next_states.to(self.device),
         )
 
         return state_batch, action_batch, reward_batch, non_final_mask, non_final_next_states, weights, indices
