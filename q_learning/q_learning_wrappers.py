@@ -118,12 +118,18 @@ class DeepQLearningBaseWrapper:
     ) -> Tuple[torch.tensor, torch.tensor]:
         raise NotImplementedError("Deep Q-Learning wrapper does not implement 'get_td_targets()' function!")
 
-    @staticmethod
-    def get_distributional_td_targets(reward_batch: torch.tensor, next_q_value_dists: torch.tensor) -> torch.tensor:
+    def get_distributional_td_targets(
+        self, reward_batch: torch.tensor, next_q_value_dists: torch.tensor
+    ) -> torch.tensor:
         delta_z = float(const.V_MAX - const.V_MIN) / (const.NUM_ATOMS - 1)
 
         rewards = reward_batch.unsqueeze(1).expand_as(next_q_value_dists)
-        support = torch.linspace(const.V_MIN, const.V_MAX, const.NUM_ATOMS).unsqueeze(0).expand_as(next_q_value_dists)
+        support = (
+            torch.linspace(const.V_MIN, const.V_MAX, const.NUM_ATOMS)
+            .unsqueeze(0)
+            .expand_as(next_q_value_dists)
+            .to(self.device)
+        )
 
         Tz = rewards + np.power(const.GAMMA, const.N_STEP_RETURNS) * support
         Tz = Tz.clamp(min=const.V_MIN, max=const.V_MAX)
@@ -136,9 +142,10 @@ class DeepQLearningBaseWrapper:
             .long()
             .unsqueeze(1)
             .expand(reward_batch.size(0), const.NUM_ATOMS)
+            .to(self.device)
         )
 
-        proj_td_targets = torch.zeros(next_q_value_dists.size())
+        proj_td_targets = torch.zeros(next_q_value_dists.size(), device=self.device)
         proj_td_targets.view(-1).index_add_(
             0, (lower + offset).view(-1), (next_q_value_dists * (upper.float() - b)).view(-1)
         )
@@ -201,9 +208,8 @@ class DeepQLearningBaseWrapper:
                 next_state_action_values,
             )
 
-    @staticmethod
-    def get_expected_values(value_distributions: torch.tensor) -> torch.tensor:
-        return (value_distributions * torch.linspace(const.V_MIN, const.V_MAX, const.NUM_ATOMS)).sum(1)
+    def get_expected_values(self, value_distributions: torch.tensor) -> torch.tensor:
+        return (value_distributions * torch.linspace(const.V_MIN, const.V_MAX, const.NUM_ATOMS).to(self.device)).sum(1)
 
     def track_tensorboard_metrics(
         self,
@@ -309,7 +315,7 @@ class DoubleDeepQLearningWrapper(DeepQLearningBaseWrapper):
             next_actions = (
                 (
                     self.policy_net_eval(non_final_next_states)
-                    * torch.linspace(const.V_MIN, const.V_MAX, const.NUM_ATOMS)
+                    * torch.linspace(const.V_MIN, const.V_MAX, const.NUM_ATOMS).to(self.device)
                 )
                 .sum(2)
                 .max(1)[1]

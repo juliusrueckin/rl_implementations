@@ -63,7 +63,9 @@ def select_action(
             if const.NUM_ATOMS == 1:
                 return policy_net(state.to(device)).max(1)[1].view(1, 1)
 
-            q_values_dist = policy_net(state.to(device)) * torch.linspace(const.V_MIN, const.V_MAX, const.NUM_ATOMS)
+            q_values_dist = policy_net(state.to(device)) * torch.linspace(const.V_MIN, const.V_MAX, const.NUM_ATOMS).to(
+                device
+            )
             return q_values_dist.sum(2).max(1)[1].view(1, 1)
 
     return torch.tensor([[random.randrange(num_actions)]], device=device, dtype=torch.long)
