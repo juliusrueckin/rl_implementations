@@ -59,12 +59,10 @@ for i in range(const.NUM_EPISODES):
 
         next_observation = utils.get_screen(env)
         next_state_tensor = None
+        next_state = state.copy()
         if not done:
-            next_state = state.copy()
             next_state.append(next_observation)
             next_state_tensor = torch.stack(tuple(next_state), dim=1)
-            state_tensor = next_state_tensor
-            state = next_state.copy()
 
         deep_q_learning_wrapper.replay_buffer.push(state_tensor, action, next_state_tensor, reward)
         deep_q_learning_wrapper.optimize_model(steps_done)
@@ -76,6 +74,9 @@ for i in range(const.NUM_EPISODES):
         if done:
             deep_q_learning_wrapper.episode_terminated(episode_return, steps_done)
             break
+
+        state_tensor = next_state_tensor
+        state = next_state.copy()
 
 print("Complete")
 env.render()
