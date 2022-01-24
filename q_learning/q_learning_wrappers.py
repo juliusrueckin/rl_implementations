@@ -70,7 +70,9 @@ class DeepQLearningBaseWrapper:
             loss_fn = nn.SmoothL1Loss(reduction="none")
             return loss_fn(estimated_q_values, td_targets)
 
-        return -(td_targets * torch.log(estimated_q_values)).sum(1)
+        estimated_q_values = estimated_q_values.clamp(min=1e-3)
+        loss = -(td_targets * torch.log(estimated_q_values)).sum(1)
+        return loss
 
     def update_target_network(self):
         self.target_net.load_state_dict(self.policy_net.state_dict())
@@ -136,6 +138,9 @@ class DeepQLearningBaseWrapper:
         b = (Tz - const.V_MIN) / delta_z
         lower = b.floor().long()
         upper = b.ceil().long()
+
+        lower[(upper > 0) * (lower == upper)] -= 1
+        upper[(lower < (const.NUM_ATOMS - 1)) * (lower == upper)] += 1
 
         offset = (
             torch.linspace(0, (reward_batch.size(0) - 1) * const.NUM_ATOMS, reward_batch.size(0))
@@ -206,6 +211,8 @@ class DeepQLearningBaseWrapper:
                 td_targets if const.NUM_ATOMS == 1 else self.get_expected_values(td_targets),
                 estimated_q_values if const.NUM_ATOMS == 1 else self.get_expected_values(estimated_q_values),
                 next_state_action_values,
+                estimated_q_values[0] if const.NUM_ATOMS > 1 else None,
+                td_targets[0] if const.NUM_ATOMS > 1 else None,
             )
 
     def get_expected_values(self, value_distributions: torch.tensor) -> torch.tensor:
@@ -218,6 +225,8 @@ class DeepQLearningBaseWrapper:
         td_targets: torch.tensor,
         estimated_q_values: torch.tensor,
         next_q_values: torch.tensor,
+        estimated_q_value_distribution: torch.tensor = None,
+        td_target_distribution: torch.tensor = None,
     ):
         self.writer.add_scalar("Training/Loss", loss, steps_done)
         self.writer.add_scalar("Hyperparam/Beta", self.replay_buffer.beta, steps_done)
@@ -225,6 +234,10 @@ class DeepQLearningBaseWrapper:
         self.writer.add_scalar("Training/TD-Target", td_targets.mean(), steps_done)
         self.writer.add_scalar("Training/TD-Estimation", estimated_q_values.mean(), steps_done)
         self.writer.add_histogram("OnlineNetwork/NextQValues", next_q_values, steps_done)
+
+        if estimated_q_value_distribution is not None and td_target_distribution is not None:
+            self.writer.add_histogram("Distributions/Q-Values", estimated_q_value_distribution, steps_done)
+            self.writer.add_histogram("Distributions/TD-Targets", td_target_distribution, steps_done)
 
         total_grad_norm = 0
         for params in self.policy_net.parameters():
@@ -250,14 +263,14 @@ class DeepQLearningWrapper(DeepQLearningBaseWrapper):
     ) -> Tuple[torch.tensor, torch.tensor]:
         if const.NUM_ATOMS == 1:
             next_state_action_values = torch.zeros(reward_batch.size(0), device=self.device)
-            next_state_action_values[non_final_mask] = self.target_net(non_final_next_states).max(1)[0].detach()
+            next_state_action_values[non_final_mask] = self.target_net(non_final_next_states).detach().max(1)[0]
             return (
                 (reward_batch + np.power(const.GAMMA, const.N_STEP_RETURNS) * next_state_action_values).unsqueeze(1),
                 next_state_action_values,
             )
 
         next_q_value_dists = torch.zeros((reward_batch.size(0), self.num_actions, const.NUM_ATOMS), device=self.device)
-        next_q_value_dists[non_final_mask] = self.target_net(non_final_next_states)
+        next_q_value_dists[non_final_mask] = self.target_net(non_final_next_states).detach()
 
         next_actions = (next_q_value_dists * torch.linspace(const.V_MIN, const.V_MAX, const.NUM_ATOMS)).sum(2).max(1)[1]
         next_actions = next_actions.unsqueeze(1).unsqueeze(1).expand(reward_batch.size(0), 1, const.NUM_ATOMS)
@@ -292,40 +305,37 @@ class DoubleDeepQLearningWrapper(DeepQLearningBaseWrapper):
     def get_td_targets(
         self, reward_batch: torch.tensor, non_final_next_states: torch.tensor, non_final_mask: torch.tensor
     ) -> Tuple[torch.tensor, torch.tensor]:
-        with torch.no_grad():
-            if const.NOISY_NETS:
-                self.policy_net_eval.reset_noisy_layers()
+        if const.NOISY_NETS:
+            self.policy_net_eval.reset_noisy_layers()
 
-            if const.NUM_ATOMS == 1:
-                next_state_action_indices = self.policy_net_eval(non_final_next_states).max(1)[1].detach()
-                next_state_action_indices = next_state_action_indices.view(next_state_action_indices.size(0), 1)
+        if const.NUM_ATOMS == 1:
+            next_state_action_indices = self.policy_net_eval(non_final_next_states).detach().max(1)[1]
+            next_state_action_indices = next_state_action_indices.view(next_state_action_indices.size(0), 1)
 
-                next_state_action_values = torch.zeros(reward_batch.size(0), device=self.device)
-                next_state_action_values[non_final_mask] = (
-                    self.target_net(non_final_next_states).gather(1, next_state_action_indices).view(-1)
-                )
-
-                return (
-                    (reward_batch + np.power(const.GAMMA, const.N_STEP_RETURNS) * next_state_action_values).unsqueeze(
-                        1
-                    ),
-                    next_state_action_values,
-                )
-
-            next_actions = (
-                (
-                    self.policy_net_eval(non_final_next_states)
-                    * torch.linspace(const.V_MIN, const.V_MAX, const.NUM_ATOMS).to(self.device)
-                )
-                .sum(2)
-                .max(1)[1]
+            next_state_action_values = torch.zeros(reward_batch.size(0), device=self.device)
+            next_state_action_values[non_final_mask] = (
+                self.target_net(non_final_next_states).detach().gather(1, next_state_action_indices).view(-1)
             )
-            next_actions = next_actions.unsqueeze(1).unsqueeze(1).expand(next_actions.size(0), 1, const.NUM_ATOMS)
 
-            next_q_value_dists = torch.zeros((reward_batch.size(0), 1, const.NUM_ATOMS), device=self.device)
-            next_q_value_dists[non_final_mask] = self.target_net(non_final_next_states).gather(1, next_actions)
-            next_q_value_dists = next_q_value_dists.squeeze(1)
+            return (
+                (reward_batch + np.power(const.GAMMA, const.N_STEP_RETURNS) * next_state_action_values).unsqueeze(1),
+                next_state_action_values,
+            )
 
-            projected_td_targets = self.get_distributional_td_targets(reward_batch, next_q_value_dists)
+        next_actions = (
+            (
+                self.policy_net_eval(non_final_next_states).detach()
+                * torch.linspace(const.V_MIN, const.V_MAX, const.NUM_ATOMS).to(self.device)
+            )
+            .sum(2)
+            .max(1)[1]
+        )
+        next_actions = next_actions.unsqueeze(1).unsqueeze(1).expand(next_actions.size(0), 1, const.NUM_ATOMS)
 
-            return projected_td_targets, self.get_expected_values(next_q_value_dists)
+        next_q_value_dists = torch.zeros((reward_batch.size(0), 1, const.NUM_ATOMS), device=self.device)
+        next_q_value_dists[non_final_mask] = self.target_net(non_final_next_states).detach().gather(1, next_actions)
+        next_q_value_dists = next_q_value_dists.squeeze(1)
+
+        projected_td_targets = self.get_distributional_td_targets(reward_batch, next_q_value_dists)
+
+        return projected_td_targets, self.get_expected_values(next_q_value_dists)
