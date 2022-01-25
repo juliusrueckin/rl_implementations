@@ -9,10 +9,11 @@ def get_network(
     noisy_net: bool = False,
     noisy_std_init: float = 0.5,
     num_atoms: int = 1,
+    num_fc_hidden_units: int = 256,
 ):
     if network_name == "DQN":
-        return DQN(width, height, num_actions, noisy_net, noisy_std_init, num_atoms)
+        return DQN(width, height, num_actions, noisy_net, noisy_std_init, num_atoms, num_fc_hidden_units)
     elif network_name == "Dueling DQN":
-        return DuelingDQN(width, height, num_actions, noisy_net, noisy_std_init, num_atoms)
+        return DuelingDQN(width, height, num_actions, noisy_net, noisy_std_init, num_atoms, num_fc_hidden_units)
     else:
         raise NotImplementedError(f"Network '{network_name}' not implemented!")
