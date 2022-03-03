@@ -72,7 +72,7 @@ class DeepQLearningBaseWrapper:
             loss_fn = nn.SmoothL1Loss(reduction="none")
             return loss_fn(estimated_q_values, td_targets)
 
-        estimated_q_values = estimated_q_values.clamp(min=1e-3)
+        estimated_q_values = estimated_q_values.clamp(min=1e-5)
         loss = -(td_targets * torch.log(estimated_q_values)).sum(1)
         return loss
 
@@ -144,21 +144,9 @@ class DeepQLearningBaseWrapper:
         lower[(upper > 0) * (lower == upper)] -= 1
         upper[(lower < (const.NUM_ATOMS - 1)) * (lower == upper)] += 1
 
-        offset = (
-            torch.linspace(0, (reward_batch.size(0) - 1) * const.NUM_ATOMS, reward_batch.size(0))
-            .long()
-            .unsqueeze(1)
-            .expand(reward_batch.size(0), const.NUM_ATOMS)
-            .to(self.device)
-        )
-
-        proj_td_targets = torch.zeros(next_q_value_dists.size(), device=self.device)
-        proj_td_targets.view(-1).index_add_(
-            0, (lower + offset).view(-1), (next_q_value_dists * (upper.float() - b)).view(-1)
-        )
-        proj_td_targets.view(-1).index_add_(
-            0, (upper + offset).view(-1), (next_q_value_dists * (b - lower.float())).view(-1)
-        )
+        proj_td_targets = torch.zeros_like(next_q_value_dists, device=self.device)
+        proj_td_targets.scatter_add_(dim=1, index=lower, src=next_q_value_dists * (upper.float() - b))
+        proj_td_targets.scatter_add_(dim=1, index=upper, src=next_q_value_dists * (b - lower.float()))
 
         return proj_td_targets
 
@@ -337,6 +325,7 @@ class DoubleDeepQLearningWrapper(DeepQLearningBaseWrapper):
 
         next_q_value_dists = torch.zeros((reward_batch.size(0), 1, const.NUM_ATOMS), device=self.device)
         next_q_value_dists[non_final_mask] = self.target_net(non_final_next_states).detach().gather(1, next_actions)
+        next_q_value_dists[~non_final_mask, :, 0] = 1.0
         next_q_value_dists = next_q_value_dists.squeeze(1)
 
         projected_td_targets = self.get_distributional_td_targets(reward_batch, next_q_value_dists)
