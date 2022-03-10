@@ -9,7 +9,7 @@ from torch.utils.tensorboard import SummaryWriter
 
 import constants as const
 from networks import get_network
-from replay_buffers import PrioritizedExperienceReplay
+from q_learning.replay_buffers import PrioritizedExperienceReplay
 from utils import utils
 
 
@@ -253,7 +253,7 @@ class DeepQLearningWrapper(DeepQLearningBaseWrapper):
     ) -> Tuple[torch.tensor, torch.tensor]:
         if const.NUM_ATOMS == 1:
             next_state_action_values = torch.zeros(reward_batch.size(0), device=self.device)
-            next_state_action_values[non_final_mask] = self.target_net(non_final_next_states).detach().max(1)[0]
+            next_state_action_values[non_final_mask] = self.target_net(non_final_next_states).max(1)[0].detach()
             return (
                 (reward_batch + np.power(const.GAMMA, const.N_STEP_RETURNS) * next_state_action_values).unsqueeze(1),
                 next_state_action_values,
