@@ -125,8 +125,6 @@ class PPOWrapper:
                     advantage_batch.squeeze(),
                 )
                 value_target_batch = advantage_batch + old_value_batch
-                advantage_batch = advantage_batch / advantage_batch.std().clamp(min=1e-8)
-                value_target_batch = value_target_batch / value_target_batch.std().clamp(min=1e-8)
 
                 policy_loss = self.get_policy_loss(
                     action_batch, policy_batch, old_policy_batch, advantage_batch, clip_epsilon
