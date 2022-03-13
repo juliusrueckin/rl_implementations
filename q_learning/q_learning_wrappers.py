@@ -7,7 +7,7 @@ import torch
 from torch import nn
 from torch.utils.tensorboard import SummaryWriter
 
-import constants as const
+import q_learning_constants as const
 from networks import get_network
 from q_learning.replay_buffers import PrioritizedExperienceReplay
 from utils import utils

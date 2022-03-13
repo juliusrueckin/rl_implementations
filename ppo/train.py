@@ -6,8 +6,8 @@ import gym
 import torch
 from torch.utils.tensorboard import SummaryWriter
 
-import q_learning_constants as const
-from q_learning import get_q_learning_wrapper
+import ppo_constants as const
+from ppo.ppo_wrappers import PPOWrapper
 from utils import utils
 
 writer = SummaryWriter(log_dir=const.LOG_DIR)
@@ -19,11 +19,9 @@ env.reset()
 init_screen = utils.get_screen(env)
 _, screen_height, screen_width = init_screen.shape
 num_actions = env.action_space.n
-steps_done = 0
 
-deep_q_learning_wrapper = get_q_learning_wrapper(
-    const.DOUBLE_Q_LEARNING, screen_width, screen_height, num_actions, const.NETWORK_NAME, writer
-)
+ppo_wrapper = PPOWrapper(screen_width, screen_height, num_actions, writer)
+steps_done = 0
 
 for i in range(const.NUM_EPISODES):
     env.reset()
@@ -50,11 +48,15 @@ for i in range(const.NUM_EPISODES):
 
             continue
 
-        writer.add_scalar("Hyperparam/Epsilon", utils.schedule_epsilon(steps_done), steps_done)
-        action = utils.select_action(state_tensor, steps_done, num_actions, deep_q_learning_wrapper.policy_net, device)
+        with torch.no_grad():
+            policy = ppo_wrapper.policy_net_old(state_tensor.to(device))
+            value = ppo_wrapper.value_net_old(state_tensor.to(device))
+            action = policy.sample()
+
         _, reward, done, _ = env.step(action.item())
         episode_return += reward
         reward = torch.tensor([reward], device=device)
+        done_tensor = torch.tensor([int(done)], device=device)
         steps_done += 1
 
         next_observation = utils.get_screen(env)
@@ -64,15 +66,15 @@ for i in range(const.NUM_EPISODES):
             next_state.append(next_observation)
             next_state_tensor = torch.stack(tuple(next_state), dim=1)
 
-        deep_q_learning_wrapper.replay_buffer.push(state_tensor, action, next_state_tensor, reward)
-        deep_q_learning_wrapper.optimize_model(steps_done)
-
-        if steps_done % const.TARGET_UPDATE == 0:
-            print(f"UPDATE TARGET NETWORK after {steps_done} STEPS")
-            deep_q_learning_wrapper.update_target_network()
+        ppo_wrapper.batch_memory.add(state_tensor, action, policy, reward, done_tensor, value)
+        if len(ppo_wrapper.batch_memory) % const.HORIZON == 0 and len(ppo_wrapper.batch_memory) > 0:
+            print(f"OPTIMIZE MODEL at STEP {steps_done}")
+            ppo_wrapper.optimize_model(steps_done)
+            ppo_wrapper.update_old_networks()
+            ppo_wrapper.batch_memory.clear()
 
         if done:
-            deep_q_learning_wrapper.episode_terminated(episode_return, steps_done)
+            ppo_wrapper.episode_terminated(episode_return, steps_done)
             break
 
         state_tensor = next_state_tensor

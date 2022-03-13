@@ -1,6 +1,6 @@
 import gym
 import utils
-import constants as const
+import q_learning_constants as const
 import matplotlib.pyplot as plt
 
 env = gym.make(const.ENV_NAME).unwrapped

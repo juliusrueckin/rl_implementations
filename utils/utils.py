@@ -7,10 +7,11 @@ import torch
 from PIL import Image
 from torchvision import transforms as T
 
-import constants as const
+import q_learning_constants as const
 from networks.q_networks import DQN, DuelingDQN
 
 Transition = namedtuple("Transition", ("state", "action", "next_state", "reward"))
+TransitionPPO = namedtuple("TransitionPPO", ("state", "action", "policy", "reward", "done", "value", "advantage"))
 transform = T.Compose(
     [
         T.ToPILImage(),
@@ -73,3 +74,11 @@ def select_action(
 
 def compute_cumulated_return(rewards: Union[List, deque]) -> float:
     return sum([np.power(const.GAMMA, i) * transition.reward for i, transition in enumerate(rewards)])
+
+
+def schedule_clip_epsilon(base_epsilon: float, steps_done: int, total_steps: int):
+    return np.maximum(1.0 - (steps_done / total_steps), 0.1) * base_epsilon
+
+
+def explained_variance(values: torch.Tensor, value_targets: torch.Tensor) -> float:
+    return (1 - (value_targets - values).var()) / value_targets.var()

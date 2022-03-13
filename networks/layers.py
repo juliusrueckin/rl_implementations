@@ -4,7 +4,7 @@ import torch
 import torch.nn.functional as F
 from torch import nn
 
-import constants as const
+import q_learning_constants as const
 
 
 class Encoder(nn.Module):
