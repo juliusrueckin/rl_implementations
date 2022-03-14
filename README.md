@@ -11,4 +11,5 @@ This repository reimplements the most popular reinforcement learning algorithms 
 - Dueling network architectures ([Dueling DDQN](https://arxiv.org/pdf/1511.06581v3.pdf))
 - Noisy networks for exploration ([Noisy Nets](https://arxiv.org/pdf/1706.10295v3.pdf))
 - Distributional Perspective on Reinforcement Learning ([Distributional RL](http://proceedings.mlr.press/v70/bellemare17a/bellemare17a.pdf))
+- Proximal Policy Optimization Algorithms ([PPO](https://arxiv.org/pdf/1707.06347v2.pdf))
 - Atari tricks: frame stacking, action repetitions, no-ops actions
