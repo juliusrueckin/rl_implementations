@@ -70,7 +70,9 @@ class BatchMemory:
     def get(self, last_value: torch.Tensor, last_done: torch.Tensor) -> List:
         self.compute_returns(last_value, last_done)
         self.compute_advantages(last_value, last_done)
-        self.normalize_values()
+        if const.NORMALIZE_VALUES:
+            self.normalize_values()
+
         batch_start_indices = np.arange(0, len(self), self.batch_size)
         transition_indices = np.arange(0, len(self), dtype=np.int32)
         np.random.shuffle(transition_indices)
