@@ -56,7 +56,6 @@ for i in range(const.NUM_EPISODES):
         _, reward, done, _ = env.step(action.item())
         episode_return += reward
         reward = torch.tensor([reward], device=device)
-        done_tensor = torch.tensor([int(done)], device=device)
         steps_done += 1
 
         next_observation = utils.get_screen(env)
@@ -66,7 +65,7 @@ for i in range(const.NUM_EPISODES):
             next_state.append(next_observation)
             next_state_tensor = torch.stack(tuple(next_state), dim=1)
 
-        ppo_wrapper.batch_memory.add(state_tensor, action, policy, reward, done_tensor, value)
+        ppo_wrapper.batch_memory.add(state_tensor, action, policy, reward, done, value)
         if len(ppo_wrapper.batch_memory) % const.HORIZON == 0 and len(ppo_wrapper.batch_memory) > 0:
             print(f"OPTIMIZE MODEL at STEP {steps_done}")
             ppo_wrapper.optimize_model(steps_done)

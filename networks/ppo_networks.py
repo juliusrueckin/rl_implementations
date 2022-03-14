@@ -34,7 +34,7 @@ class PPONet(nn.Module):
         x_policy = self.policy_head(x_policy)
         policy = F.softmax(x_policy, dim=1)
 
-        value = F.softplus(self.value_head(x_value))
+        value = self.value_head(x_value)
 
         return Categorical(policy), value
 
@@ -81,6 +81,6 @@ class ValueNet(nn.Module):
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         x = self.encoder(x)
         x = F.relu(self.fc_value(x.view(x.size(0), -1)))
-        x = F.softplus(self.value_head(x))
+        x = self.value_head(x)
 
         return x

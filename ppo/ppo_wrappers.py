@@ -79,31 +79,43 @@ class PPOWrapper:
         self, transitions: List[TransitionPPO]
     ) -> Tuple[torch.Tensor, torch.Tensor, Categorical, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
         batch = TransitionPPO(*zip(*transitions))
-        state_batch, action_batch, policy_batch, reward_batch, done_batch, value_batch, advantage_batch = (
+        state_batch, action_batch, policy_batch, reward_batch, value_batch, advantage_batch, return_batch = (
             torch.cat(batch.state),
             torch.cat(batch.action),
             torch.cat([dist.probs for dist in batch.policy]),
             torch.cat(batch.reward),
-            torch.cat(batch.done),
             torch.cat(batch.value),
             torch.cat(batch.advantage),
+            torch.cat(batch.return_t),
         )
 
-        state_batch, action_batch, policy_batch, reward_batch, done_batch, value_batch, advantage_batch = (
+        state_batch, action_batch, policy_batch, reward_batch, value_batch, advantage_batch, return_batch = (
             state_batch.to(self.device),
             action_batch.to(self.device),
             Categorical(policy_batch.to(self.device)),
             reward_batch.to(self.device),
-            done_batch.to(self.device),
             value_batch.to(self.device),
             advantage_batch.to(self.device),
+            return_batch.to(self.device),
         )
 
-        return state_batch, action_batch, policy_batch, reward_batch, done_batch, value_batch, advantage_batch
+        return state_batch, action_batch, policy_batch, reward_batch, value_batch, advantage_batch, return_batch
+
+    def compute_last_step_info(self) -> Tuple[torch.Tensor, torch.Tensor]:
+        last_done = torch.tensor([int(self.batch_memory.transitions[-1].done)])
+        last_value = torch.tensor([0])
+
+        if not last_value:
+            last_state = self.batch_memory.transitions[-1].state
+            last_value = self.value_net_old(last_state)
+
+        return last_value.squeeze(), last_done.squeeze()
 
     def optimize_model(self, steps_done: int):
         clip_epsilon = schedule_clip_epsilon(const.CLIP_EPSILON, steps_done, const.NUM_EPISODES)
-        batches = self.batch_memory.get()
+        last_value, last_done = self.compute_last_step_info()
+        batches = self.batch_memory.get(last_value, last_done)
+
         for _ in range(const.NUM_EPOCHS):
             for batch in batches:
                 (
@@ -111,20 +123,20 @@ class PPOWrapper:
                     action_batch,
                     old_policy_batch,
                     reward_batch,
-                    done_batch,
                     old_value_batch,
                     advantage_batch,
+                    value_target_batch,
                 ) = self.prepare_batch_data(batch)
 
                 policy_batch = self.policy_net(state_batch)
                 value_batch = self.value_net(state_batch)
 
-                old_value_batch, value_batch, advantage_batch = (
+                old_value_batch, value_batch, advantage_batch, value_target_batch = (
                     old_value_batch.squeeze(),
                     value_batch.squeeze(),
                     advantage_batch.squeeze(),
+                    value_target_batch.squeeze(),
                 )
-                value_target_batch = advantage_batch + old_value_batch
 
                 policy_loss = self.get_policy_loss(
                     action_batch, policy_batch, old_policy_batch, advantage_batch, clip_epsilon

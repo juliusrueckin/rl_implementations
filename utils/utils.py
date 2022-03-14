@@ -11,7 +11,9 @@ import q_learning_constants as const
 from networks.q_networks import DQN, DuelingDQN
 
 Transition = namedtuple("Transition", ("state", "action", "next_state", "reward"))
-TransitionPPO = namedtuple("TransitionPPO", ("state", "action", "policy", "reward", "done", "value", "advantage"))
+TransitionPPO = namedtuple(
+    "TransitionPPO", ("state", "action", "policy", "reward", "done", "value", "advantage", "return_t")
+)
 transform = T.Compose(
     [
         T.ToPILImage(),

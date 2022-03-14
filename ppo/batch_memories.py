@@ -26,26 +26,51 @@ class BatchMemory:
         done: torch.Tensor,
         value: torch.Tensor,
     ):
-        self.transitions.append(TransitionPPO(state, action, policy, reward, done, value, torch.tensor([0])))
+        self.transitions.append(TransitionPPO(state, action, policy, reward, done, value, None, None))
 
-    def compute_advantages(self):
-        for t in range(len(self) - 1):
+    def compute_advantages(self, last_value: torch.Tensor, last_done: torch.Tensor):
+        last_done_idx = 0
+        for t in range(len(self)):
             advantage_t = 0
-            for i in range(t, len(self) - 1):
-                discount_factor = (const.GAMMA * const.LAMBDA) ** i
-                advantage_t += discount_factor * (
-                    self.transitions[i].reward
-                    + const.GAMMA * self.transitions[i + 1].value * (1 - self.transitions[i].done)
-                    - self.transitions[i].value
-                )
-
+            for i in range(t, len(self)):
+                discount_factor = (const.GAMMA * const.LAMBDA) ** (i - last_done_idx)
                 if self.transitions[i].done:
+                    last_done_idx = i
+                    advantage_t += discount_factor * (self.transitions[i].reward - self.transitions[i].value)
                     break
+
+                if i == const.HORIZON - 1:
+                    advantage_t += discount_factor * (
+                        self.transitions[i].reward + last_value * (1 - last_done) - self.transitions[i].value
+                    )
+                    break
+
+                advantage_t += discount_factor * (
+                    self.transitions[i].reward + const.GAMMA * self.transitions[i + 1].value - self.transitions[i].value
+                )
 
             self.transitions[t] = self.transitions[t]._replace(advantage=torch.tensor([advantage_t]))
 
-    def get(self) -> List:
-        self.compute_advantages()
+    def compute_returns(self, last_value: torch.Tensor, last_done: torch.Tensor):
+        last_done_idx = 0
+        for t in range(len(self)):
+            return_t = 0
+            for i in range(t, len(self)):
+                discount_factor = const.GAMMA ** (i - last_done_idx)
+                return_t += discount_factor * self.transitions[i].reward
+                if self.transitions[i].done:
+                    last_done_idx = i
+                    break
+
+                if i == const.HORIZON - 1:
+                    return_t += self.transitions[i].reward + discount_factor * last_value * (1 - last_done)
+
+            self.transitions[t] = self.transitions[t]._replace(return_t=torch.tensor([return_t]))
+
+    def get(self, last_value: torch.Tensor, last_done: torch.Tensor) -> List:
+        self.compute_returns(last_value, last_done)
+        self.compute_advantages(last_value, last_done)
+        self.normalize_values()
         batch_start_indices = np.arange(0, len(self), self.batch_size)
         transition_indices = np.arange(0, len(self), dtype=np.int32)
         np.random.shuffle(transition_indices)
@@ -56,6 +81,17 @@ class BatchMemory:
             batches.append([self.transitions[batch_index] for batch_index in batch_indices])
 
         return batches
+
+    def normalize_values(self):
+        adv_std = torch.cat([t.advantage for t in self.transitions]).squeeze().std().clamp(min=1e-8)
+        for i in range(len(self.transitions)):
+            norm_advantage = self.transitions[i].advantage / adv_std
+            self.transitions[i] = self.transitions[i]._replace(advantage=torch.tensor([norm_advantage]))
+
+        return_std = torch.cat([t.return_t for t in self.transitions]).squeeze().std().clamp(min=1e-8)
+        for i in range(len(self.transitions)):
+            norm_return = self.transitions[i].return_t / return_std
+            self.transitions[i] = self.transitions[i]._replace(return_t=torch.tensor([norm_return]))
 
     def __len__(self):
         return len(self.transitions)
