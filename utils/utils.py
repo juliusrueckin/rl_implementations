@@ -30,20 +30,23 @@ def get_cart_location(env, screen_width: int) -> int:
     return int(env.state[0] * scale + screen_width / 2.0)
 
 
-def get_screen(env) -> torch.Tensor:
+def get_screen(env, preprocessing: bool = True) -> torch.Tensor:
     screen = env.render(mode="rgb_array").transpose((2, 0, 1))
-    _, screen_height, screen_width = screen.shape
-    screen = screen[:, int(screen_height * 0.4) : int(screen_height * 0.8)]
-    view_width = int(screen_width * 0.6)
-    cart_location = get_cart_location(env, screen_width)
 
-    slice_range = slice(cart_location - view_width // 2, cart_location + view_width // 2)
-    if cart_location < view_width // 2:
-        slice_range = slice(view_width)
-    elif cart_location > (screen_width - view_width // 2):
-        slice_range = slice(-view_width, None)
+    if preprocessing:
+        _, screen_height, screen_width = screen.shape
+        screen = screen[:, int(screen_height * 0.4) : int(screen_height * 0.8)]
+        view_width = int(screen_width * 0.6)
+        cart_location = get_cart_location(env, screen_width)
 
-    screen = screen[:, :, slice_range]
+        slice_range = slice(cart_location - view_width // 2, cart_location + view_width // 2)
+        if cart_location < view_width // 2:
+            slice_range = slice(view_width)
+        elif cart_location > (screen_width - view_width // 2):
+            slice_range = slice(-view_width, None)
+
+        screen = screen[:, :, slice_range]
+
     screen = np.ascontiguousarray(screen, dtype=np.float32) / 255
     screen = torch.from_numpy(screen)
 
