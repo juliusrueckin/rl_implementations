@@ -16,16 +16,16 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 env = gym.make(const.ENV_NAME, g=9.81)
 env.reset()
 
-init_screen = utils.get_screen(env, preprocessing=False)
+init_screen = utils.get_pendulum_screen(env)
 _, screen_height, screen_width = init_screen.shape
-num_actions = 1
+num_actions = env.action_space.shape[0]
 steps_done = 0
 
 sac_wrapper = SACWrapper(screen_width, screen_height, num_actions, writer=writer)
 
 for i in range(const.NUM_EPISODES):
     env.reset()
-    observation = utils.get_screen(env, preprocessing=False)
+    observation = utils.get_pendulum_screen(env)
     state = deque([torch.zeros(observation.size()) for _ in range(const.FRAMES_STACKED)], maxlen=const.FRAMES_STACKED)
     state.append(observation)
     state_tensor = torch.stack(tuple(state), dim=1)
@@ -34,32 +34,33 @@ for i in range(const.NUM_EPISODES):
     no_op_steps = random.randint(0, const.NO_OP_MAX_STEPS)
     for t in count():
         if t < no_op_steps:
-            action = torch.tensor([[random.randrange(num_actions)]], device=device, dtype=torch.long)
-            _, _, done, _ = env.step(action.item())
+            _, _, done, _ = env.step(env.action_space.sample())
             if done:
                 break
 
             continue
 
         if t % const.ACTION_REPETITIONS != 0:
-            _, _, done, _ = env.step(action.item())
+            _, _, done, _ = env.step(u.item())
             if done:
                 break
 
             continue
 
-        if t < const.MIN_START_STEPS:
-            action = env.action_space.sample()
-            action = torch.from_numpy(action).to(device)
+        if steps_done < const.MIN_START_STEPS:
+            u = env.action_space.sample()
+            u = torch.from_numpy(u).to(device)
+            action = torch.tanh(u).to(device)
         else:
             action = sac_wrapper.policy_net.get_action(state_tensor).squeeze(1).detach()
+            u = torch.from_numpy(env.action_space.high).to(device) * action
 
-        _, reward, done, _ = env.step(action.cpu().numpy())
+        _, reward, done, _ = env.step(u.cpu().numpy())
         episode_return += reward
         reward = torch.tensor([reward], device=device)
         steps_done += 1
 
-        next_observation = utils.get_screen(env, preprocessing=False)
+        next_observation = utils.get_pendulum_screen(env)
         next_state_tensor = None
         next_state = state.copy()
         if not done:

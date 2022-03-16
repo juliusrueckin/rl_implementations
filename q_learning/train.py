@@ -16,7 +16,7 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 env = gym.make(const.ENV_NAME)
 env.reset()
 
-init_screen = utils.get_screen(env)
+init_screen = utils.get_cartpole_screen(env)
 _, screen_height, screen_width = init_screen.shape
 num_actions = env.action_space.n
 steps_done = 0
@@ -27,7 +27,7 @@ deep_q_learning_wrapper = get_q_learning_wrapper(
 
 for i in range(const.NUM_EPISODES):
     env.reset()
-    observation = utils.get_screen(env)
+    observation = utils.get_cartpole_screen(env)
     state = deque([torch.zeros(observation.size()) for _ in range(const.FRAMES_STACKED)], maxlen=const.FRAMES_STACKED)
     state.append(observation)
     state_tensor = torch.stack(tuple(state), dim=1)
@@ -57,7 +57,7 @@ for i in range(const.NUM_EPISODES):
         reward = torch.tensor([reward], device=device)
         steps_done += 1
 
-        next_observation = utils.get_screen(env)
+        next_observation = utils.get_cartpole_screen(env)
         next_state_tensor = None
         next_state = state.copy()
         if not done:

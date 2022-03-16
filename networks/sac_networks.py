@@ -1,10 +1,13 @@
+from typing import Tuple
+
+import numpy as np
 import torch
 from torch import nn
+from torch.distributions.independent import Independent
+from torch.distributions.normal import Normal
 from torch.nn import functional as F
 
 from networks.layers import Encoder
-from torch.distributions.normal import Normal
-from typing import Tuple
 
 
 class PolicyNet(nn.Module):
@@ -26,33 +29,28 @@ class PolicyNet(nn.Module):
         self.mean_head = nn.Linear(num_fc_hidden_units, num_actions)
         self.log_std_head = nn.Linear(num_fc_hidden_units, num_actions)
 
-    def forward(self, x: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
+    def forward(self, x: torch.Tensor) -> Independent:
         x = self.encoder(x)
 
         x_mean = F.relu(self.fc_mean(x.view(x.size(0), -1)))
         x_log_std = F.relu(self.fc_log_std(x.view(x.size(0), -1)))
 
-        x_mean = self.mean_head(x_mean)
-        x_log_std = self.log_std_head(x_log_std)
-        x_log_std = torch.clamp(x_log_std, -20, 1)
+        mean = self.mean_head(x_mean)
+        log_std = self.log_std_head(x_log_std)
+        std = torch.exp(torch.clamp(log_std, -20, 2))
 
-        return x_mean, x_log_std
+        return Independent(Normal(loc=mean, scale=std), reinterpreted_batch_ndims=1)
 
     def get_action(self, x: torch.Tensor) -> torch.Tensor:
-        mean, log_std = self.forward(x)
-        std = log_std.exp()
+        policy = self.forward(x)
+        return torch.tanh(policy.sample())
 
-        epsilon = Normal(0, 1).sample().to(self.device)
-        return torch.tanh(mean + epsilon * std)
-
-    def evaluate(self, x: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
-        mean, log_std = self.forward(x)
-        std = log_std.exp()
-
-        epsilon = Normal(0, 1).sample().to(self.device)
-        action = torch.tanh(mean + epsilon * std)
-        log_prob = Normal(mean, std).log_prob(mean + std * epsilon) - torch.log(1 - action.pow(2) + 1e-8)
-        return action, log_prob, epsilon, mean, log_std
+    def evaluate(self, x: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
+        policy = self.forward(x)
+        u = policy.rsample()
+        action = torch.tanh(u)
+        log_prob = policy.log_prob(u) - torch.sum(2 * (np.log(2) - u - F.softplus(-2 * u)), dim=1)
+        return action, log_prob
 
 
 class ValueNet(nn.Module):

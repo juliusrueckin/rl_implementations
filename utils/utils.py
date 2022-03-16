@@ -5,9 +5,10 @@ from typing import List, Union
 import numpy as np
 import torch
 from PIL import Image
+from torch.utils.tensorboard import SummaryWriter
 from torchvision import transforms as T
 
-import q_learning_constants as const
+import sac_constants as const
 from networks.q_networks import DQN, DuelingDQN
 
 Transition = namedtuple("Transition", ("state", "action", "next_state", "reward"))
@@ -30,23 +31,34 @@ def get_cart_location(env, screen_width: int) -> int:
     return int(env.state[0] * scale + screen_width / 2.0)
 
 
-def get_screen(env, preprocessing: bool = True) -> torch.Tensor:
+def get_cartpole_screen(env) -> torch.Tensor:
     screen = env.render(mode="rgb_array").transpose((2, 0, 1))
 
-    if preprocessing:
-        _, screen_height, screen_width = screen.shape
-        screen = screen[:, int(screen_height * 0.4) : int(screen_height * 0.8)]
-        view_width = int(screen_width * 0.6)
-        cart_location = get_cart_location(env, screen_width)
+    _, screen_height, screen_width = screen.shape
+    screen = screen[:, int(screen_height * 0.4) : int(screen_height * 0.8)]
+    view_width = int(screen_width * 0.6)
+    cart_location = get_cart_location(env, screen_width)
 
-        slice_range = slice(cart_location - view_width // 2, cart_location + view_width // 2)
-        if cart_location < view_width // 2:
-            slice_range = slice(view_width)
-        elif cart_location > (screen_width - view_width // 2):
-            slice_range = slice(-view_width, None)
+    slice_range = slice(cart_location - view_width // 2, cart_location + view_width // 2)
+    if cart_location < view_width // 2:
+        slice_range = slice(view_width)
+    elif cart_location > (screen_width - view_width // 2):
+        slice_range = slice(-view_width, None)
 
-        screen = screen[:, :, slice_range]
+    screen = screen[:, :, slice_range]
 
+    screen = np.ascontiguousarray(screen, dtype=np.float32) / 255
+    screen = torch.from_numpy(screen)
+
+    return transform(screen)
+
+
+def get_pendulum_screen(env) -> torch.Tensor:
+    screen = env.render(mode="rgb_array").transpose((2, 0, 1))
+    _, screen_height, screen_width = screen.shape
+    screen = screen[
+        :, int(screen_width * 0.2) : int(screen_width * 0.8), int(screen_height * 0.2) : int(screen_height * 0.8)
+    ]
     screen = np.ascontiguousarray(screen, dtype=np.float32) / 255
     screen = torch.from_numpy(screen)
 
@@ -87,3 +99,28 @@ def schedule_clip_epsilon(base_epsilon: float, steps_done: int, total_steps: int
 
 def explained_variance(values: torch.Tensor, value_targets: torch.Tensor) -> float:
     return (1 - (value_targets - values).var()) / value_targets.var()
+
+
+def clip_gradients(net: torch.nn.Module):
+    for param in net.parameters():
+        param.grad.data.clamp_(-const.CLIP_GRAD, const.CLIP_GRAD)
+
+
+def polyak_averaging(target_net: torch.nn.Module, net: torch.nn.Module):
+    for target_param, param in zip(target_net.parameters(), net.parameters()):
+        target_param.data.copy_(target_param.data * (1.0 - const.TAU) + param.data * const.TAU)
+
+
+def compute_grad_norm(net: torch.nn.Module) -> float:
+    total_grad_norm = 0
+    for params in net.parameters():
+        if params.grad is not None:
+            total_grad_norm += params.grad.data.norm(2).item()
+
+    return total_grad_norm
+
+
+def log_network_params(net: torch.nn.Module, writer: SummaryWriter, step: int, network_name: str):
+    for tag, params in net.named_parameters():
+        if params.grad is not None:
+            writer.add_histogram(f"{network_name}/{tag}", params.data.cpu().numpy(), step)
