@@ -124,3 +124,10 @@ def log_network_params(net: torch.nn.Module, writer: SummaryWriter, step: int, n
     for tag, params in net.named_parameters():
         if params.grad is not None:
             writer.add_histogram(f"{network_name}/{tag}", params.data.cpu().numpy(), step)
+
+
+def normalize_values(values: torch.Tensor, shift_mean: bool = False) -> torch.Tensor:
+    if shift_mean:
+        return (values - values.mean()) / values.std().clamp(min=1e-8)
+
+    return values / values.std().clamp(min=1e-8)

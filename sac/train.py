@@ -41,8 +41,10 @@ for i in range(const.NUM_EPISODES):
             continue
 
         if t % const.ACTION_REPETITIONS != 0:
-            _, _, done, _ = env.step(u.item())
+            _, reward, done, _ = env.step(u.cpu().numpy())
+            episode_return += reward
             if done:
+                sac_wrapper.episode_terminated(episode_return, steps_done)
                 break
 
             continue

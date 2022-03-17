@@ -45,35 +45,12 @@ class PolicyNet(nn.Module):
         policy = self.forward(x)
         return torch.tanh(policy.sample())
 
-    def evaluate(self, x: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
+    def evaluate(self, x: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor, Independent]:
         policy = self.forward(x)
         u = policy.rsample()
         action = torch.tanh(u)
         log_prob = policy.log_prob(u) - torch.sum(2 * (np.log(2) - u - F.softplus(-2 * u)), dim=1)
-        return action, log_prob
-
-
-class ValueNet(nn.Module):
-    def __init__(
-        self,
-        width: int,
-        height: int,
-        num_actions: int,
-        num_fc_hidden_units: int = 256,
-    ):
-        super(ValueNet, self).__init__()
-
-        self.num_actions = num_actions
-        self.encoder = Encoder()
-        self.fc_value = nn.Linear(self.encoder.hidden_dimensions(width, height), num_fc_hidden_units)
-        self.value_head = nn.Linear(num_fc_hidden_units, 1)
-
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        x = self.encoder(x)
-        x = F.relu(self.fc_value(x.view(x.size(0), -1)))
-        x = self.value_head(x)
-
-        return x
+        return action, log_prob, policy
 
 
 class QNet(nn.Module):
