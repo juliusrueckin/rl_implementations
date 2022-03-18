@@ -22,7 +22,7 @@ from utils.utils import (
 
 
 class SACWrapper:
-    def __init__(self, width: int, height: int, num_actions: int, writer: SummaryWriter = None):
+    def __init__(self, state_dim: int, num_actions: int, writer: SummaryWriter = None):
         self.num_actions = num_actions
         self.writer = writer
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -32,19 +32,17 @@ class SACWrapper:
             const.N_STEP_RETURNS,
         )
 
-        self.policy_net = PolicyNet(width, height, num_actions, num_fc_hidden_units=const.NUM_FC_HIDDEN_UNITS)
-
-        self.q_net1 = QNet(width, height, num_actions, num_fc_hidden_units=const.NUM_FC_HIDDEN_UNITS).to(self.device)
-        self.target_q_net1 = QNet(width, height, num_actions, num_fc_hidden_units=const.NUM_FC_HIDDEN_UNITS).to(
+        self.policy_net = PolicyNet(state_dim, num_actions, num_fc_hidden_units=const.NUM_FC_HIDDEN_UNITS).to(
             self.device
         )
+
+        self.q_net1 = QNet(state_dim, num_actions, num_fc_hidden_units=const.NUM_FC_HIDDEN_UNITS).to(self.device)
+        self.target_q_net1 = QNet(state_dim, num_actions, num_fc_hidden_units=const.NUM_FC_HIDDEN_UNITS).to(self.device)
         self.target_q_net1.load_state_dict(self.q_net1.state_dict())
         self.target_q_net1.eval()
 
-        self.q_net2 = QNet(width, height, num_actions, num_fc_hidden_units=const.NUM_FC_HIDDEN_UNITS).to(self.device)
-        self.target_q_net2 = QNet(width, height, num_actions, num_fc_hidden_units=const.NUM_FC_HIDDEN_UNITS).to(
-            self.device
-        )
+        self.q_net2 = QNet(state_dim, num_actions, num_fc_hidden_units=const.NUM_FC_HIDDEN_UNITS).to(self.device)
+        self.target_q_net2 = QNet(state_dim, num_actions, num_fc_hidden_units=const.NUM_FC_HIDDEN_UNITS).to(self.device)
         self.target_q_net2.load_state_dict(self.q_net2.state_dict())
         self.target_q_net2.eval()
 

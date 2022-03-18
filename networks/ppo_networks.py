@@ -5,7 +5,7 @@ from torch import nn
 from torch.distributions.categorical import Categorical
 from torch.nn import functional as F
 
-from networks.layers import Encoder
+from networks.layers import CNNEncoder
 
 
 class PPONet(nn.Module):
@@ -19,7 +19,7 @@ class PPONet(nn.Module):
         super(PPONet, self).__init__()
 
         self.num_actions = num_actions
-        self.encoder = Encoder()
+        self.encoder = CNNEncoder()
         self.fc_policy = nn.Linear(self.encoder.hidden_dimensions(width, height), num_fc_hidden_units)
         self.fc_value = nn.Linear(self.encoder.hidden_dimensions(width, height), num_fc_hidden_units)
         self.policy_head = nn.Linear(num_fc_hidden_units, num_actions)
@@ -50,7 +50,7 @@ class PolicyNet(nn.Module):
         super(PolicyNet, self).__init__()
 
         self.num_actions = num_actions
-        self.encoder = Encoder()
+        self.encoder = CNNEncoder()
         self.fc_policy = nn.Linear(self.encoder.hidden_dimensions(width, height), num_fc_hidden_units)
         self.policy_head = nn.Linear(num_fc_hidden_units, num_actions)
 
@@ -74,7 +74,7 @@ class ValueNet(nn.Module):
         super(ValueNet, self).__init__()
 
         self.num_actions = num_actions
-        self.encoder = Encoder()
+        self.encoder = CNNEncoder()
         self.fc_value = nn.Linear(self.encoder.hidden_dimensions(width, height), num_fc_hidden_units)
         self.value_head = nn.Linear(num_fc_hidden_units, 1)
 

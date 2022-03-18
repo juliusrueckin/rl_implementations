@@ -7,9 +7,9 @@ from torch import nn
 import q_learning_constants as const
 
 
-class Encoder(nn.Module):
+class CNNEncoder(nn.Module):
     def __init__(self):
-        super(Encoder, self).__init__()
+        super(CNNEncoder, self).__init__()
 
         self.conv1 = nn.Conv2d(const.FRAMES_STACKED, 32, kernel_size=(4, 4), stride=4)
         self.conv2 = nn.Conv2d(32, 64, kernel_size=(4, 4), stride=2)
@@ -26,6 +26,22 @@ class Encoder(nn.Module):
         x = F.relu(self.conv1(x))
         x = F.relu(self.conv2(x))
         x = F.relu(self.conv3(x))
+
+        return x
+
+
+class MLPEncoder(nn.Module):
+    def __init__(self, input_dim: int, num_hidden_units: int):
+        super(MLPEncoder, self).__init__()
+
+        self.fc1 = nn.Linear(input_dim, num_hidden_units)
+        self.fc2 = nn.Linear(num_hidden_units, num_hidden_units)
+        self.fc3 = nn.Linear(num_hidden_units, num_hidden_units)
+
+    def forward(self, x):
+        x = F.relu(self.fc1(x))
+        x = F.relu(self.fc2(x))
+        x = F.relu(self.fc3(x))
 
         return x
 

@@ -1,7 +1,7 @@
 from torch import nn
 from torch.nn import functional as F
 
-from networks.layers import NoisyLinear, Encoder
+from networks.layers import NoisyLinear, CNNEncoder
 
 
 class DQN(nn.Module):
@@ -23,7 +23,7 @@ class DQN(nn.Module):
         self.num_actions = num_actions
         self.num_atoms = num_atoms
 
-        self.encoder = Encoder()
+        self.encoder = CNNEncoder()
         self.fc = nn.Linear(self.encoder.hidden_dimensions(width, height), num_fc_hidden_units)
         self.head = nn.Linear(num_fc_hidden_units, num_actions * num_atoms)
 
@@ -69,7 +69,7 @@ class DuelingDQN(nn.Module):
         self.num_actions = num_actions
         self.num_atoms = num_atoms
 
-        self.encoder = Encoder()
+        self.encoder = CNNEncoder()
 
         self.fc_advantages = nn.Linear(self.encoder.hidden_dimensions(width, height), num_fc_hidden_units)
         self.head_advantages = nn.Linear(num_fc_hidden_units, num_actions * num_atoms)
