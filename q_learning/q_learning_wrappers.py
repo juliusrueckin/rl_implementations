@@ -160,10 +160,7 @@ class DeepQLearningBaseWrapper:
         weighted_loss = weighted_losses.mean()
         self.optimizer.zero_grad()
         weighted_loss.backward()
-
-        for param in self.policy_net.parameters():
-            param.grad.data.clamp_(-const.CLIP_GRAD, const.CLIP_GRAD)
-
+        utils.clip_gradients(self.policy_net, const.CLIP_GRAD)
         self.optimizer.step()
 
         self.replay_buffer.step()

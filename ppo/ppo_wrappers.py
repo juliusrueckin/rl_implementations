@@ -11,7 +11,7 @@ from torch.utils.tensorboard import SummaryWriter
 import ppo_constants as const
 from networks.ppo_networks import PolicyNet, ValueNet
 from ppo.batch_memories import BatchMemory
-from utils.utils import explained_variance, TransitionPPO, schedule_clip_epsilon
+from utils.utils import explained_variance, TransitionPPO, schedule_clip_epsilon, clip_gradients
 
 
 class PPOWrapper:
@@ -151,20 +151,14 @@ class PPOWrapper:
                 )
                 self.policy_optimizer.zero_grad()
                 policy_loss.backward()
-
-                for param in self.policy_net.parameters():
-                    param.grad.data.clamp_(-const.CLIP_GRAD, const.CLIP_GRAD)
-
+                clip_gradients(self.policy_net, const.CLIP_GRAD)
                 self.policy_optimizer.step()
                 self.policy_scheduler.step()
 
                 value_loss = self.get_value_loss(value_batch, value_target_batch)
                 self.value_optimizer.zero_grad()
                 value_loss.backward()
-
-                for param in self.policy_net.parameters():
-                    param.grad.data.clamp_(-const.CLIP_GRAD, const.CLIP_GRAD)
-
+                clip_gradients(self.value_net, const.CLIP_GRAD)
                 self.value_optimizer.step()
                 self.value_scheduler.step()
 
