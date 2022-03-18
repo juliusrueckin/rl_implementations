@@ -8,20 +8,11 @@ from PIL import Image
 from torch.utils.tensorboard import SummaryWriter
 from torchvision import transforms as T
 
-import q_learning_constants as const
 from networks.q_networks import DQN, DuelingDQN
 
 Transition = namedtuple("Transition", ("state", "action", "next_state", "reward", "done"))
 TransitionPPO = namedtuple(
     "TransitionPPO", ("state", "action", "policy", "reward", "done", "value", "advantage", "return_t")
-)
-transform = T.Compose(
-    [
-        T.ToPILImage(),
-        T.Resize(const.INPUT_SIZE, interpolation=Image.CUBIC),
-        T.Grayscale(num_output_channels=1),
-        T.ToTensor(),
-    ]
 )
 
 
@@ -31,7 +22,15 @@ def get_cart_location(env, screen_width: int) -> int:
     return int(env.state[0] * scale + screen_width / 2.0)
 
 
-def get_cartpole_screen(env) -> torch.Tensor:
+def get_cartpole_screen(env, input_size: int) -> torch.Tensor:
+    transform = T.Compose(
+        [
+            T.ToPILImage(),
+            T.Resize(input_size, interpolation=Image.CUBIC),
+            T.Grayscale(num_output_channels=1),
+            T.ToTensor(),
+        ]
+    )
     screen = env.render(mode="rgb_array").transpose((2, 0, 1))
 
     _, screen_height, screen_width = screen.shape
@@ -53,7 +52,15 @@ def get_cartpole_screen(env) -> torch.Tensor:
     return transform(screen)
 
 
-def get_pendulum_screen(env) -> torch.Tensor:
+def get_pendulum_screen(env, input_size: int) -> torch.Tensor:
+    transform = T.Compose(
+        [
+            T.ToPILImage(),
+            T.Resize(input_size, interpolation=Image.CUBIC),
+            T.Grayscale(num_output_channels=1),
+            T.ToTensor(),
+        ]
+    )
     screen = env.render(mode="rgb_array").transpose((2, 0, 1))
     _, screen_height, screen_width = screen.shape
     screen = screen[
@@ -65,32 +72,42 @@ def get_pendulum_screen(env) -> torch.Tensor:
     return transform(screen)
 
 
-def schedule_epsilon(steps_done: int) -> float:
-    if const.NOISY_NETS:
+def schedule_epsilon(steps_done: int, noisy_net: bool, eps_start: float, eps_end: float, eps_decay: float) -> float:
+    if noisy_net:
         return 0
 
-    return max(const.EPS_END, const.EPS_START - steps_done * (const.EPS_START - const.EPS_END) / const.EPS_DECAY)
+    return max(eps_end, eps_start - steps_done * (eps_start - eps_end) / eps_decay)
 
 
 def select_action(
-    state: torch.tensor, steps_done: int, num_actions: int, policy_net: Union[DQN, DuelingDQN], device: torch.device
+    state: torch.tensor,
+    steps_done: int,
+    num_actions: int,
+    policy_net: Union[DQN, DuelingDQN],
+    device: torch.device,
+    noisy_net: bool,
+    eps_start: float,
+    eps_end: float,
+    eps_decay: float,
+    min_start_steps: int,
+    num_atoms: int,
+    v_min: float,
+    v_max: float,
 ):
-    eps_threshold = schedule_epsilon(steps_done)
-    if random.random() > eps_threshold and steps_done > const.MIN_START_STEPS:
+    eps_threshold = schedule_epsilon(steps_done, noisy_net, eps_start, eps_end, eps_decay)
+    if random.random() > eps_threshold and steps_done > min_start_steps:
         with torch.no_grad():
-            if const.NUM_ATOMS == 1:
+            if num_atoms == 1:
                 return policy_net(state.to(device)).max(1)[1].view(1, 1)
 
-            q_values_dist = policy_net(state.to(device)) * torch.linspace(const.V_MIN, const.V_MAX, const.NUM_ATOMS).to(
-                device
-            )
+            q_values_dist = policy_net(state.to(device)) * torch.linspace(v_min, v_max, num_atoms).to(device)
             return q_values_dist.sum(2).max(1)[1].view(1, 1)
 
     return torch.tensor([[random.randrange(num_actions)]], device=device, dtype=torch.long)
 
 
-def compute_cumulated_return(rewards: Union[List, deque]) -> float:
-    return sum([np.power(const.GAMMA, i) * transition.reward for i, transition in enumerate(rewards)])
+def compute_cumulated_return(rewards: Union[List, deque], gamma: float) -> float:
+    return sum([np.power(gamma, i) * transition.reward for i, transition in enumerate(rewards)])
 
 
 def schedule_clip_epsilon(base_epsilon: float, steps_done: int, total_steps: int):
@@ -101,14 +118,14 @@ def explained_variance(values: torch.Tensor, value_targets: torch.Tensor) -> flo
     return (1 - (value_targets - values).var()) / value_targets.var()
 
 
-def clip_gradients(net: torch.nn.Module):
+def clip_gradients(net: torch.nn.Module, clip_const: float):
     for param in net.parameters():
-        param.grad.data.clamp_(-const.CLIP_GRAD, const.CLIP_GRAD)
+        param.grad.data.clamp_(-clip_const, clip_const)
 
 
-def polyak_averaging(target_net: torch.nn.Module, net: torch.nn.Module):
+def polyak_averaging(target_net: torch.nn.Module, net: torch.nn.Module, tau: float):
     for target_param, param in zip(target_net.parameters(), net.parameters()):
-        target_param.data.copy_(target_param.data * (1.0 - const.TAU) + param.data * const.TAU)
+        target_param.data.copy_(target_param.data * (1.0 - tau) + param.data * tau)
 
 
 def compute_grad_norm(net: torch.nn.Module) -> float:

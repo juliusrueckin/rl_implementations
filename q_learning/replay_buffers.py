@@ -7,13 +7,14 @@ from utils import utils
 
 
 class ReplayBuffer:
-    def __init__(self, buffer_length: int = 10000, batch_size: int = 32, n_steps: int = 3):
+    def __init__(self, buffer_length: int = 10000, batch_size: int = 32, n_steps: int = 3, gamma: float = 0.99):
         self.n_steps = n_steps
         self.buffer_length = buffer_length
         self.batch_size = batch_size
         self.n_step_buffer = deque([], maxlen=n_steps)
         self.buffer = deque([], maxlen=buffer_length)
         self.beta = 1
+        self.gamma = gamma
 
     def step(self):
         pass
@@ -26,7 +27,7 @@ class ReplayBuffer:
                     self.n_step_buffer[trans_id].state,
                     self.n_step_buffer[trans_id].action,
                     self.n_step_buffer[trans_id].next_state,
-                    utils.compute_cumulated_return(list(self.n_step_buffer)[trans_id:]),
+                    utils.compute_cumulated_return(list(self.n_step_buffer)[trans_id:], self.gamma),
                     self.n_step_buffer[-1].done,
                 )
             )
@@ -48,7 +49,7 @@ class ReplayBuffer:
                 self.n_step_buffer[0].state,
                 self.n_step_buffer[0].action,
                 one_step_transition.next_state,
-                utils.compute_cumulated_return(self.n_step_buffer),
+                utils.compute_cumulated_return(self.n_step_buffer, self.gamma),
                 one_step_transition.done,
             )
         )
@@ -70,8 +71,8 @@ class ReplayBuffer:
 
 
 class ExperienceReplay(ReplayBuffer):
-    def __init__(self, buffer_length: int = 10000, batch_size: int = 32, n_steps: int = 3):
-        super().__init__(buffer_length, batch_size, n_steps)
+    def __init__(self, buffer_length: int = 10000, batch_size: int = 32, n_steps: int = 3, gamma: float = 0.99):
+        super().__init__(buffer_length, batch_size, n_steps, gamma)
 
     def sample(self) -> Tuple[List, np.array, np.array]:
         sample_indices = np.random.choice(len(self.buffer), size=self.batch_size)
@@ -88,8 +89,9 @@ class PrioritizedExperienceReplay(ReplayBuffer):
         alpha: float = 0.75,
         beta0: float = 0.4,
         replay_delay: int = 1000,
+        gamma: float = 0.99,
     ):
-        super().__init__(buffer_length, batch_size, n_steps)
+        super().__init__(buffer_length, batch_size, n_steps, gamma)
 
         self.alpha = alpha
         self.beta0 = beta0

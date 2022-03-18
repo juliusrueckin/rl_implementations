@@ -16,7 +16,7 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 env = gym.make(const.ENV_NAME)
 env.reset()
 
-init_screen = utils.get_cartpole_screen(env)
+init_screen = utils.get_cartpole_screen(env, const.INPUT_SIZE)
 _, screen_height, screen_width = init_screen.shape
 num_actions = env.action_space.n
 
@@ -25,7 +25,7 @@ steps_done = 0
 
 for i in range(const.NUM_EPISODES):
     env.reset()
-    observation = utils.get_cartpole_screen(env)
+    observation = utils.get_cartpole_screen(env, const.INPUT_SIZE)
     state = deque([torch.zeros(observation.size()) for _ in range(const.FRAMES_STACKED)], maxlen=const.FRAMES_STACKED)
     state.append(observation)
     state_tensor = torch.stack(tuple(state), dim=1)
@@ -58,12 +58,10 @@ for i in range(const.NUM_EPISODES):
         reward = torch.tensor([reward], device=device)
         steps_done += 1
 
-        next_observation = utils.get_cartpole_screen(env)
-        next_state_tensor = None
+        next_observation = utils.get_cartpole_screen(env, const.INPUT_SIZE)
         next_state = state.copy()
-        if not done:
-            next_state.append(next_observation)
-            next_state_tensor = torch.stack(tuple(next_state), dim=1)
+        next_state.append(next_observation)
+        next_state_tensor = torch.stack(tuple(next_state), dim=1)
 
         ppo_wrapper.batch_memory.add(state_tensor, action, policy, reward, done, value)
         if len(ppo_wrapper.batch_memory) % const.HORIZON == 0 and len(ppo_wrapper.batch_memory) > 0:

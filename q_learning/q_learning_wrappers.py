@@ -27,6 +27,7 @@ class DeepQLearningBaseWrapper:
             const.ALPHA,
             const.BETA0,
             const.REPLAY_DELAY,
+            const.GAMMA,
         )
 
         self.policy_net = get_network(

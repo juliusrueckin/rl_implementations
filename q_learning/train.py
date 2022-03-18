@@ -16,7 +16,7 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 env = gym.make(const.ENV_NAME)
 env.reset()
 
-init_screen = utils.get_cartpole_screen(env)
+init_screen = utils.get_cartpole_screen(env, const.INPUT_SIZE)
 _, screen_height, screen_width = init_screen.shape
 num_actions = env.action_space.n
 steps_done = 0
@@ -27,7 +27,7 @@ deep_q_learning_wrapper = get_q_learning_wrapper(
 
 for i in range(const.NUM_EPISODES):
     env.reset()
-    observation = utils.get_cartpole_screen(env)
+    observation = utils.get_cartpole_screen(env, const.INPUT_SIZE)
     state = deque([torch.zeros(observation.size()) for _ in range(const.FRAMES_STACKED)], maxlen=const.FRAMES_STACKED)
     state.append(observation)
     state_tensor = torch.stack(tuple(state), dim=1)
@@ -50,15 +50,33 @@ for i in range(const.NUM_EPISODES):
 
             continue
 
-        writer.add_scalar("Hyperparam/Epsilon", utils.schedule_epsilon(steps_done), steps_done)
-        action = utils.select_action(state_tensor, steps_done, num_actions, deep_q_learning_wrapper.policy_net, device)
+        writer.add_scalar(
+            "Hyperparam/Epsilon",
+            utils.schedule_epsilon(steps_done, const.NOISY_NETS, const.EPS_START, const.EPS_END, const.EPS_DECAY),
+            steps_done,
+        )
+        action = utils.select_action(
+            state_tensor,
+            steps_done,
+            num_actions,
+            deep_q_learning_wrapper.policy_net,
+            device,
+            const.NOISY_NETS,
+            const.EPS_START,
+            const.EPS_END,
+            const.EPS_DECAY,
+            const.MIN_START_STEPS,
+            const.NUM_ATOMS,
+            const.V_MIN,
+            const.V_MAX,
+        )
         _, reward, done, _ = env.step(action.item())
         episode_return += reward
         reward = torch.tensor([reward], device=device)
         done_tensor = torch.tensor([int(done)], dtype=torch.int32, device=device)
         steps_done += 1
 
-        next_observation = utils.get_cartpole_screen(env)
+        next_observation = utils.get_cartpole_screen(env, const.INPUT_SIZE)
         next_state = state.copy()
         next_state.append(next_observation)
         next_state_tensor = torch.stack(tuple(next_state), dim=1)

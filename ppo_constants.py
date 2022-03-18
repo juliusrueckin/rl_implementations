@@ -1,5 +1,6 @@
 # Environment
 ENV_NAME = "CartPole-v1"
+INPUT_SIZE = 40
 NO_OP_MAX_STEPS = 0
 ACTION_REPETITIONS = 1
 FRAMES_STACKED = 4
@@ -24,5 +25,4 @@ LAMBDA = 0.95
 NORMALIZE_VALUES = True
 
 # Network architecture
-INPUT_SIZE = 40
 NUM_FC_HIDDEN_UNITS = 128

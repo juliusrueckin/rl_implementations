@@ -5,8 +5,8 @@ from typing import Tuple
 import numpy as np
 import torch
 from torch import nn
-from torch.utils.tensorboard import SummaryWriter
 from torch.distributions.independent import Independent
+from torch.utils.tensorboard import SummaryWriter
 
 import sac_constants as const
 from networks.sac_networks import PolicyNet, QNet
@@ -18,7 +18,6 @@ from utils.utils import (
     polyak_averaging,
     compute_grad_norm,
     log_network_params,
-    normalize_values,
     ValueStats,
 )
 
@@ -33,6 +32,7 @@ class SACWrapper:
             const.REPLAY_BUFFER_LEN,
             const.BATCH_SIZE,
             const.N_STEP_RETURNS,
+            const.GAMMA,
         )
 
         self.policy_net = PolicyNet(
@@ -72,8 +72,8 @@ class SACWrapper:
                 self.target_q_net1.load_state_dict(self.q_net1.state_dict())
                 self.target_q_net2.load_state_dict(self.q_net2.state_dict())
             else:
-                polyak_averaging(self.target_q_net1, self.q_net1)
-                polyak_averaging(self.target_q_net2, self.q_net2)
+                polyak_averaging(self.target_q_net1, self.q_net1, const.TAU)
+                polyak_averaging(self.target_q_net2, self.q_net2, const.TAU)
 
     @staticmethod
     def get_policy_loss(log_probs: torch.tensor, q_values: torch.tensor) -> torch.tensor:
@@ -132,14 +132,14 @@ class SACWrapper:
             q_value_loss1 = self.get_q_value_loss(estimated_q_values1, target_q_values)
             self.q_net1_optimizer.zero_grad()
             q_value_loss1.backward()
-            clip_gradients(self.q_net1)
+            clip_gradients(self.q_net1, const.CLIP_GRAD)
             self.q_net1_optimizer.step()
 
             estimated_q_values2 = self.q_net2(state_batch, action_batch.unsqueeze(1)).squeeze()
             q_value_loss2 = self.get_q_value_loss(estimated_q_values2, target_q_values)
             self.q_net2_optimizer.zero_grad()
             q_value_loss2.backward()
-            clip_gradients(self.q_net2)
+            clip_gradients(self.q_net2, const.CLIP_GRAD)
             self.q_net2_optimizer.step()
 
             for param in self.q_net1.parameters():
