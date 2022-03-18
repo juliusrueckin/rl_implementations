@@ -84,32 +84,27 @@ class SACWrapper:
         q_value_loss_fn = nn.SmoothL1Loss(reduction="mean")
         return q_value_loss_fn(estimated_q_values, q_value_targets.detach())
 
-    def prepare_batch_data(
-        self,
-    ) -> Tuple[torch.tensor, torch.tensor, torch.tensor, torch.tensor, torch.tensor, torch.tensor, torch.tensor]:
-        transitions, indices, weights = self.replay_buffer.sample()
-        weights = torch.FloatTensor(weights).to(self.device)
+    def prepare_batch_data(self) -> Tuple[torch.tensor, torch.tensor, torch.tensor, torch.tensor, torch.tensor]:
+        transitions, _, _ = self.replay_buffer.sample()
         batch = Transition(*zip(*transitions))
-        non_final_mask = torch.tensor(
-            tuple(map(lambda s: s is not None, batch.next_state)), device=self.device, dtype=torch.bool
-        )
-        non_final_next_states = torch.cat([s for s in batch.next_state if s is not None])
 
-        state_batch, action_batch, reward_batch = (
+        state_batch, action_batch, reward_batch, next_state_batch, done_batch = (
             torch.cat(batch.state),
             torch.cat(batch.action),
             torch.cat(batch.reward),
+            torch.cat(batch.next_state),
+            torch.cat(batch.done),
         )
 
-        state_batch, action_batch, reward_batch, non_final_mask, non_final_next_states = (
+        state_batch, action_batch, reward_batch, next_state_batch, done_batch = (
             state_batch.to(self.device),
             action_batch.to(self.device),
             reward_batch.to(self.device),
-            non_final_mask.to(self.device),
-            non_final_next_states.to(self.device),
+            next_state_batch.to(self.device),
+            done_batch.to(self.device),
         )
 
-        return state_batch, action_batch, reward_batch, non_final_mask, non_final_next_states, weights, indices
+        return state_batch, action_batch, reward_batch, next_state_batch, done_batch
 
     def optimize_model(self, steps_done: int):
         for _ in range(const.NUM_GRADIENT_STEPS):
@@ -117,22 +112,19 @@ class SACWrapper:
                 state_batch,
                 action_batch,
                 reward_batch,
-                non_final_mask,
-                non_final_next_states,
-                _,
-                _,
+                next_state_batch,
+                done_batch,
             ) = self.prepare_batch_data()
 
             with torch.no_grad():
-                new_next_action_batch, new_next_log_prob_batch, _ = self.policy_net.evaluate(non_final_next_states)
-                target_q_values = reward_batch.squeeze()
+                new_next_action_batch, new_next_log_prob_batch, _ = self.policy_net.evaluate(next_state_batch)
                 target_next_q_values = torch.min(
-                    self.target_q_net1(non_final_next_states, new_next_action_batch),
-                    self.target_q_net2(non_final_next_states, new_next_action_batch),
+                    self.target_q_net1(next_state_batch, new_next_action_batch),
+                    self.target_q_net2(next_state_batch, new_next_action_batch),
                 )
-                target_q_values[non_final_mask] += (const.GAMMA ** const.N_STEP_RETURNS) * (
-                    target_next_q_values.squeeze() - const.ENTROPY_COEFF * new_next_log_prob_batch.squeeze()
-                )
+                target_q_values = reward_batch.squeeze() + (const.GAMMA ** const.N_STEP_RETURNS) * (
+                    1 - done_batch.squeeze()
+                ) * (target_next_q_values.squeeze() - const.ENTROPY_COEFF * new_next_log_prob_batch.squeeze())
                 if const.NORMALIZE_VALUES:
                     target_q_values = self.value_stats.normalize(target_q_values, shift_mean=False)
 

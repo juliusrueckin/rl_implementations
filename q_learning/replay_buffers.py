@@ -25,8 +25,9 @@ class ReplayBuffer:
                 *(
                     self.n_step_buffer[trans_id].state,
                     self.n_step_buffer[trans_id].action,
-                    None,
+                    self.n_step_buffer[trans_id].next_state,
                     utils.compute_cumulated_return(list(self.n_step_buffer)[trans_id:]),
+                    self.n_step_buffer[-1].done,
                 )
             )
             self.buffer.append(n_step_transition)
@@ -48,13 +49,14 @@ class ReplayBuffer:
                 self.n_step_buffer[0].action,
                 one_step_transition.next_state,
                 utils.compute_cumulated_return(self.n_step_buffer),
+                one_step_transition.done,
             )
         )
 
         self.add_new_priority()
         self.buffer.append(n_step_transition)
 
-        if one_step_transition.next_state is None:
+        if one_step_transition.done:
             self.clear_n_step_buffer()
 
     def sample(self) -> Tuple[List, np.array, np.array]:

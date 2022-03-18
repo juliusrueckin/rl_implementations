@@ -56,9 +56,10 @@ for i in range(const.NUM_EPISODES):
         next_physical_state_tensor = torch.tensor(next_physical_state, device=device).unsqueeze(0)
         episode_return += reward
         reward = torch.tensor([reward], device=device)
+        done_tensor = torch.tensor([int(done)], dtype=torch.int32, device=device)
         steps_done += 1
 
-        sac_wrapper.replay_buffer.push(physical_state_tensor, action, next_physical_state_tensor, reward)
+        sac_wrapper.replay_buffer.push(physical_state_tensor, action, next_physical_state_tensor, reward, done_tensor)
 
         if steps_done >= const.MIN_START_STEPS:
             sac_wrapper.optimize_model(steps_done)

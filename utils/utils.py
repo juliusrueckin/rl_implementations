@@ -11,7 +11,7 @@ from torchvision import transforms as T
 import sac_constants as const
 from networks.q_networks import DQN, DuelingDQN
 
-Transition = namedtuple("Transition", ("state", "action", "next_state", "reward"))
+Transition = namedtuple("Transition", ("state", "action", "next_state", "reward", "done"))
 TransitionPPO = namedtuple(
     "TransitionPPO", ("state", "action", "policy", "reward", "done", "value", "advantage", "return_t")
 )
