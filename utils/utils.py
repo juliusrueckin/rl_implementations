@@ -131,3 +131,28 @@ def normalize_values(values: torch.Tensor, shift_mean: bool = False) -> torch.Te
         return (values - values.mean()) / values.std().clamp(min=1e-8)
 
     return values / values.std().clamp(min=1e-8)
+
+
+class ValueStats:
+    def __init__(self):
+        self.counter = 0
+        self.sum_values = 0
+        self.sum_squared_values = 0
+        self.running_mean = 0
+        self.running_std = 0
+
+    def update(self, values: torch.Tensor):
+        self.counter += values.size(0)
+        self.sum_values += values.sum().item()
+        self.sum_squared_values += values.square().sum().item()
+
+        self.running_mean = self.sum_values / self.counter
+        self.running_std = np.sqrt((self.sum_squared_values / self.counter) - np.square(self.running_mean))
+
+    def normalize(self, values: torch.Tensor, shift_mean: bool = False):
+        self.update(values)
+
+        if shift_mean:
+            return (values - self.running_mean) / np.maximum(self.running_std, 1e-8)
+
+        return values / np.maximum(self.running_std, 1e-8)

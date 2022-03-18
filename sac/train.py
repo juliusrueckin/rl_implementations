@@ -16,12 +16,14 @@ env.reset()
 
 state_dim = env.observation_space.shape[0]
 action_dim = env.action_space.shape[0]
+action_limits = torch.from_numpy(env.action_space.high).to(device=device).unsqueeze(0)
 steps_done = 0
 
-sac_wrapper = SACWrapper(state_dim, action_dim, writer=writer)
+sac_wrapper = SACWrapper(state_dim, action_dim, action_limits, writer=writer)
 
 for i in range(const.NUM_EPISODES):
     physical_state = env.reset()
+    env.render(mode="rgb_array")
     physical_state_tensor = torch.tensor(physical_state, device=device).unsqueeze(0)
 
     episode_return = 0
@@ -35,7 +37,8 @@ for i in range(const.NUM_EPISODES):
             continue
 
         if t % const.ACTION_REPETITIONS != 0:
-            _, reward, done, _ = env.step(u.cpu().numpy())
+            _, reward, done, _ = env.step(action.cpu().numpy())
+            env.render(mode="rgb_array")
             episode_return += reward
             if done:
                 sac_wrapper.episode_terminated(episode_return, steps_done)
@@ -44,14 +47,12 @@ for i in range(const.NUM_EPISODES):
             continue
 
         if steps_done < const.MIN_START_STEPS:
-            u = env.action_space.sample()
-            u = torch.from_numpy(u).to(device)
-            action = torch.tanh(u).to(device)
+            action = torch.from_numpy(env.action_space.sample()).to(device)
         else:
             action = sac_wrapper.policy_net.get_action(physical_state_tensor).squeeze(1).detach()
-            u = torch.from_numpy(env.action_space.high).to(device) * action
 
-        next_physical_state, reward, done, _ = env.step(u.cpu().numpy())
+        next_physical_state, reward, done, _ = env.step(action.cpu().numpy())
+        env.render(mode="rgb_array")
         next_physical_state_tensor = torch.tensor(next_physical_state, device=device).unsqueeze(0)
         episode_return += reward
         reward = torch.tensor([reward], device=device)

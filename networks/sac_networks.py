@@ -11,10 +11,11 @@ from networks.layers import MLPEncoder
 
 
 class PolicyNet(nn.Module):
-    def __init__(self, state_dim: int, action_dim: int, num_fc_hidden_units: int = 256):
+    def __init__(self, state_dim: int, action_dim: int, action_limits: torch.Tensor, num_fc_hidden_units: int = 256):
         super(PolicyNet, self).__init__()
 
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        self.action_limits = action_limits
 
         self.encoder = MLPEncoder(state_dim, num_fc_hidden_units)
         self.fc_mean = nn.Linear(num_fc_hidden_units, num_fc_hidden_units)
@@ -40,8 +41,8 @@ class PolicyNet(nn.Module):
     def evaluate(self, x: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor, Independent]:
         policy = self.forward(x)
         u = policy.rsample()
-        action = torch.tanh(u)
         log_prob = policy.log_prob(u) - torch.sum(2 * (np.log(2) - u - F.softplus(-2 * u)), dim=1)
+        action = self.action_limits * torch.tanh(u)
         return action, log_prob, policy
 
 

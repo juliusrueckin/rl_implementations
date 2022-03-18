@@ -6,6 +6,7 @@ import numpy as np
 import torch
 from torch import nn
 from torch.utils.tensorboard import SummaryWriter
+from torch.distributions.independent import Independent
 
 import sac_constants as const
 from networks.sac_networks import PolicyNet, QNet
@@ -18,11 +19,13 @@ from utils.utils import (
     compute_grad_norm,
     log_network_params,
     normalize_values,
+    ValueStats,
 )
 
 
 class SACWrapper:
-    def __init__(self, state_dim: int, num_actions: int, writer: SummaryWriter = None):
+    def __init__(self, state_dim: int, num_actions: int, action_limits: torch.tensor, writer: SummaryWriter = None):
+        self.value_stats = ValueStats()
         self.num_actions = num_actions
         self.writer = writer
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -32,9 +35,9 @@ class SACWrapper:
             const.N_STEP_RETURNS,
         )
 
-        self.policy_net = PolicyNet(state_dim, num_actions, num_fc_hidden_units=const.NUM_FC_HIDDEN_UNITS).to(
-            self.device
-        )
+        self.policy_net = PolicyNet(
+            state_dim, num_actions, action_limits, num_fc_hidden_units=const.NUM_FC_HIDDEN_UNITS
+        ).to(self.device)
 
         self.q_net1 = QNet(state_dim, num_actions, num_fc_hidden_units=const.NUM_FC_HIDDEN_UNITS).to(self.device)
         self.target_q_net1 = QNet(state_dim, num_actions, num_fc_hidden_units=const.NUM_FC_HIDDEN_UNITS).to(self.device)
@@ -74,7 +77,7 @@ class SACWrapper:
 
     @staticmethod
     def get_policy_loss(log_probs: torch.tensor, q_values: torch.tensor) -> torch.tensor:
-        return -torch.mean(q_values.detach() - const.ENTROPY_COEFF * log_probs)
+        return (const.ENTROPY_COEFF * log_probs - q_values).mean()
 
     @staticmethod
     def get_q_value_loss(estimated_q_values: torch.tensor, q_value_targets: torch.tensor) -> torch.Tensor:
@@ -127,11 +130,11 @@ class SACWrapper:
                     self.target_q_net1(non_final_next_states, new_next_action_batch),
                     self.target_q_net2(non_final_next_states, new_next_action_batch),
                 )
-                target_q_values[non_final_mask] += (
-                    const.GAMMA ** const.N_STEP_RETURNS
-                ) * target_next_q_values.squeeze() - const.ENTROPY_COEFF * new_next_log_prob_batch.squeeze()
+                target_q_values[non_final_mask] += (const.GAMMA ** const.N_STEP_RETURNS) * (
+                    target_next_q_values.squeeze() - const.ENTROPY_COEFF * new_next_log_prob_batch.squeeze()
+                )
                 if const.NORMALIZE_VALUES:
-                    target_q_values = normalize_values(target_q_values, shift_mean=False)
+                    target_q_values = self.value_stats.normalize(target_q_values, shift_mean=False)
 
             estimated_q_values1 = self.q_net1(state_batch, action_batch.unsqueeze(1)).squeeze()
             q_value_loss1 = self.get_q_value_loss(estimated_q_values1, target_q_values)
@@ -147,16 +150,25 @@ class SACWrapper:
             clip_gradients(self.q_net2)
             self.q_net2_optimizer.step()
 
+            for param in self.q_net1.parameters():
+                param.requires_grad = False
+            for param in self.q_net2.parameters():
+                param.requires_grad = False
+
             new_action_batch, log_prob_batch, new_policy = self.policy_net.evaluate(state_batch)
-            with torch.no_grad():
-                estimated_new_q_values = torch.min(
-                    self.q_net1(state_batch, new_action_batch), self.q_net2(state_batch, new_action_batch)
-                )
+            estimated_new_q_values = torch.min(
+                self.q_net1(state_batch, new_action_batch), self.q_net2(state_batch, new_action_batch)
+            )
             policy_loss = self.get_policy_loss(log_prob_batch, estimated_new_q_values)
             self.policy_optimizer.zero_grad()
             policy_loss.backward()
             clip_gradients(self.policy_net)
             self.policy_optimizer.step()
+
+            for param in self.q_net1.parameters():
+                param.requires_grad = True
+            for param in self.q_net2.parameters():
+                param.requires_grad = True
 
         if self.writer:
             self.track_tensorboard_metrics(
@@ -167,7 +179,7 @@ class SACWrapper:
                 estimated_q_values1,
                 target_q_values,
                 explained_variance(estimated_q_values1, target_q_values),
-                new_policy.entropy().mean(),
+                new_policy,
             )
 
     def track_tensorboard_metrics(
@@ -179,14 +191,16 @@ class SACWrapper:
         estimated_q_values: torch.tensor,
         target_q_values: torch.tensor,
         explained_var: float,
-        entropy: float,
+        policy: Independent,
     ):
-        self.writer.add_scalar(f"Training/Policy-Entropy", entropy, steps_done)
+        self.writer.add_scalar(f"Training/Policy-Entropy", policy.entropy().mean(), steps_done)
+        self.writer.add_scalar(f"Training/Policy-Mean", policy.base_dist.loc.mean(), steps_done)
+        self.writer.add_scalar(f"Training/Policy-Std", policy.base_dist.scale.mean(), steps_done)
         self.writer.add_scalar("Training/Policy-Loss", policy_loss, steps_done)
+
         self.writer.add_scalar("Training/Q-Value1-Loss", q_value_loss1, steps_done)
         self.writer.add_scalar("Training/Q-Value2-Loss", q_value_loss2, steps_done)
-
-        self.writer.add_scalar("Training/Q-Value-Estimation", estimated_q_values.mean(), steps_done)
+        self.writer.add_scalar("Training/Q-Value1-Estimation", estimated_q_values.mean(), steps_done)
         self.writer.add_scalar("Training/Q-Value-Target", target_q_values.mean(), steps_done)
         self.writer.add_scalar("Training/Q-Value-Explained-Variance", explained_var, steps_done)
 
