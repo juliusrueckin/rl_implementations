@@ -55,16 +55,15 @@ for i in range(const.NUM_EPISODES):
         _, reward, done, _ = env.step(action.item())
         episode_return += reward
         reward = torch.tensor([reward], device=device)
+        done_tensor = torch.tensor([int(done)], dtype=torch.int32, device=device)
         steps_done += 1
 
         next_observation = utils.get_cartpole_screen(env)
-        next_state_tensor = None
         next_state = state.copy()
-        if not done:
-            next_state.append(next_observation)
-            next_state_tensor = torch.stack(tuple(next_state), dim=1)
+        next_state.append(next_observation)
+        next_state_tensor = torch.stack(tuple(next_state), dim=1)
 
-        deep_q_learning_wrapper.replay_buffer.push(state_tensor, action, next_state_tensor, reward)
+        deep_q_learning_wrapper.replay_buffer.push(state_tensor, action, next_state_tensor, reward, done_tensor)
         deep_q_learning_wrapper.optimize_model(steps_done)
 
         if steps_done % const.TARGET_UPDATE == 0:

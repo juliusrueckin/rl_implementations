@@ -8,7 +8,7 @@ from PIL import Image
 from torch.utils.tensorboard import SummaryWriter
 from torchvision import transforms as T
 
-import sac_constants as const
+import q_learning_constants as const
 from networks.q_networks import DQN, DuelingDQN
 
 Transition = namedtuple("Transition", ("state", "action", "next_state", "reward", "done"))

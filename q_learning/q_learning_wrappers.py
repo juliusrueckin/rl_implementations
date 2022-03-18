@@ -88,26 +88,24 @@ class DeepQLearningBaseWrapper:
         transitions, indices, weights = self.replay_buffer.sample()
         weights = torch.FloatTensor(weights).to(self.device)
         batch = utils.Transition(*zip(*transitions))
-        non_final_mask = torch.tensor(
-            tuple(map(lambda s: s is not None, batch.next_state)), device=self.device, dtype=torch.bool
-        )
-        non_final_next_states = torch.cat([s for s in batch.next_state if s is not None])
 
-        state_batch, action_batch, reward_batch = (
+        state_batch, action_batch, reward_batch, next_state_batch, done_batch = (
             torch.cat(batch.state),
             torch.cat(batch.action),
             torch.cat(batch.reward),
+            torch.cat(batch.next_state),
+            torch.cat(batch.done),
         )
 
-        state_batch, action_batch, reward_batch, non_final_mask, non_final_next_states = (
+        state_batch, action_batch, reward_batch, next_state_batch, done_batch = (
             state_batch.to(self.device),
             action_batch.to(self.device),
             reward_batch.to(self.device),
-            non_final_mask.to(self.device),
-            non_final_next_states.to(self.device),
+            next_state_batch.to(self.device),
+            done_batch.to(self.device),
         )
 
-        return state_batch, action_batch, reward_batch, non_final_mask, non_final_next_states, weights, indices
+        return state_batch, action_batch, reward_batch, next_state_batch, done_batch, weights, indices
 
     def get_q_value_estimate(self, state_batch: torch.tensor, action_batch: torch.tensor) -> torch.tensor:
         if const.NUM_ATOMS == 1:
@@ -118,7 +116,10 @@ class DeepQLearningBaseWrapper:
         return q_value_dist.gather(1, action_batch).squeeze(1)
 
     def get_td_targets(
-        self, reward_batch: torch.tensor, non_final_next_states: torch.tensor, non_final_mask: torch.tensor
+        self,
+        reward_batch: torch.tensor,
+        next_state_batch: torch.tensor,
+        done_batch: torch.tensor,
     ) -> Tuple[torch.tensor, torch.tensor]:
         raise NotImplementedError("Deep Q-Learning wrapper does not implement 'get_td_targets()' function!")
 
@@ -184,14 +185,14 @@ class DeepQLearningBaseWrapper:
             state_batch,
             action_batch,
             reward_batch,
-            non_final_mask,
-            non_final_next_states,
+            next_state_batch,
+            done_batch,
             weights,
             indices,
         ) = self.prepare_batch_data()
 
         estimated_q_values = self.get_q_value_estimate(state_batch, action_batch)
-        td_targets, next_state_action_values = self.get_td_targets(reward_batch, non_final_next_states, non_final_mask)
+        td_targets, next_state_action_values = self.get_td_targets(reward_batch, next_state_batch, done_batch)
         weighted_loss = self.optimization_step(estimated_q_values, td_targets, weights, indices)
 
         if self.writer:
@@ -249,19 +250,19 @@ class DeepQLearningWrapper(DeepQLearningBaseWrapper):
         super().__init__(screen_width, screen_height, num_actions, network_name, writer)
 
     def get_td_targets(
-        self, reward_batch: torch.tensor, non_final_next_states: torch.tensor, non_final_mask: torch.tensor
+        self,
+        reward_batch: torch.tensor,
+        next_state_batch: torch.tensor,
+        done_batch: torch.tensor,
     ) -> Tuple[torch.tensor, torch.tensor]:
         if const.NUM_ATOMS == 1:
-            next_state_action_values = torch.zeros(reward_batch.size(0), device=self.device)
-            next_state_action_values[non_final_mask] = self.target_net(non_final_next_states).max(1)[0].detach()
+            next_state_action_values = (1 - done_batch) * self.target_net(next_state_batch).max(1)[0].detach()
             return (
                 (reward_batch + np.power(const.GAMMA, const.N_STEP_RETURNS) * next_state_action_values).unsqueeze(1),
                 next_state_action_values,
             )
 
-        next_q_value_dists = torch.zeros((reward_batch.size(0), self.num_actions, const.NUM_ATOMS), device=self.device)
-        next_q_value_dists[non_final_mask] = self.target_net(non_final_next_states).detach()
-
+        next_q_value_dists = (1 - done_batch) * self.target_net(next_state_batch).detach()
         next_actions = (next_q_value_dists * torch.linspace(const.V_MIN, const.V_MAX, const.NUM_ATOMS)).sum(2).max(1)[1]
         next_actions = next_actions.unsqueeze(1).unsqueeze(1).expand(reward_batch.size(0), 1, const.NUM_ATOMS)
         next_q_value_dists = next_q_value_dists.gather(1, next_actions).squeeze(1)
@@ -294,19 +295,18 @@ class DoubleDeepQLearningWrapper(DeepQLearningBaseWrapper):
         self.policy_net_eval.load_state_dict(self.policy_net.state_dict())
 
     def get_td_targets(
-        self, reward_batch: torch.tensor, non_final_next_states: torch.tensor, non_final_mask: torch.tensor
+        self, reward_batch: torch.tensor, next_state_batch: torch.tensor, done_batch: torch.tensor
     ) -> Tuple[torch.tensor, torch.tensor]:
         if const.NOISY_NETS:
             self.policy_net_eval.reset_noisy_layers()
 
         if const.NUM_ATOMS == 1:
-            next_state_action_indices = self.policy_net_eval(non_final_next_states).detach().max(1)[1]
+            next_state_action_indices = self.policy_net_eval(next_state_batch).detach().max(1)[1]
             next_state_action_indices = next_state_action_indices.view(next_state_action_indices.size(0), 1)
 
-            next_state_action_values = torch.zeros(reward_batch.size(0), device=self.device)
-            next_state_action_values[non_final_mask] = (
-                self.target_net(non_final_next_states).detach().gather(1, next_state_action_indices).view(-1)
-            )
+            next_state_action_values = (1 - done_batch) * self.target_net(next_state_batch).detach().gather(
+                1, next_state_action_indices
+            ).view(-1)
 
             return (
                 (reward_batch + np.power(const.GAMMA, const.N_STEP_RETURNS) * next_state_action_values).unsqueeze(1),
@@ -315,7 +315,7 @@ class DoubleDeepQLearningWrapper(DeepQLearningBaseWrapper):
 
         next_actions = (
             (
-                self.policy_net_eval(non_final_next_states).detach()
+                self.policy_net_eval(next_state_batch).detach()
                 * torch.linspace(const.V_MIN, const.V_MAX, const.NUM_ATOMS).to(self.device)
             )
             .sum(2)
@@ -323,8 +323,10 @@ class DoubleDeepQLearningWrapper(DeepQLearningBaseWrapper):
         )
         next_actions = next_actions.unsqueeze(1).unsqueeze(1).expand(next_actions.size(0), 1, const.NUM_ATOMS)
 
-        next_q_value_dists = torch.zeros((reward_batch.size(0), 1, const.NUM_ATOMS), device=self.device)
-        next_q_value_dists[non_final_mask] = self.target_net(non_final_next_states).detach().gather(1, next_actions)
+        next_q_value_dists = (1 - done_batch.unsqueeze(1).unsqueeze(1)) * self.target_net(
+            next_state_batch
+        ).detach().gather(1, next_actions)
+        non_final_mask = torch.tensor(tuple(map(lambda d: d == 0, done_batch)), device=self.device, dtype=torch.bool)
         next_q_value_dists[~non_final_mask, :, 0] = 1.0
         next_q_value_dists = next_q_value_dists.squeeze(1)
 
