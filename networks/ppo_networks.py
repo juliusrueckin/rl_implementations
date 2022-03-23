@@ -15,11 +15,12 @@ class PPONet(nn.Module):
         height: int,
         num_actions: int,
         num_fc_hidden_units: int = 256,
+        num_Channels: int = 64,
     ):
         super(PPONet, self).__init__()
 
         self.num_actions = num_actions
-        self.encoder = CNNEncoder()
+        self.encoder = CNNEncoder(num_Channels)
         self.fc_policy = nn.Linear(self.encoder.hidden_dimensions(width, height), num_fc_hidden_units)
         self.fc_value = nn.Linear(self.encoder.hidden_dimensions(width, height), num_fc_hidden_units)
         self.policy_head = nn.Linear(num_fc_hidden_units, num_actions)
@@ -46,11 +47,12 @@ class PolicyNet(nn.Module):
         height: int,
         num_actions: int,
         num_fc_hidden_units: int = 256,
+        num_channels: int = 64,
     ):
         super(PolicyNet, self).__init__()
 
         self.num_actions = num_actions
-        self.encoder = CNNEncoder()
+        self.encoder = CNNEncoder(num_channels)
         self.fc_policy = nn.Linear(self.encoder.hidden_dimensions(width, height), num_fc_hidden_units)
         self.policy_head = nn.Linear(num_fc_hidden_units, num_actions)
 
@@ -70,11 +72,12 @@ class ValueNet(nn.Module):
         height: int,
         num_actions: int,
         num_fc_hidden_units: int = 256,
+        num_channels: int = 64,
     ):
         super(ValueNet, self).__init__()
 
         self.num_actions = num_actions
-        self.encoder = CNNEncoder()
+        self.encoder = CNNEncoder(num_channels)
         self.fc_value = nn.Linear(self.encoder.hidden_dimensions(width, height), num_fc_hidden_units)
         self.value_head = nn.Linear(num_fc_hidden_units, 1)
 

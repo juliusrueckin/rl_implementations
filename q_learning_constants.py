@@ -36,6 +36,7 @@ LEARNING_RATE = 0.0001
 # Network architecture
 NETWORK_NAME = "Dueling DQN"
 NUM_FC_HIDDEN_UNITS = 128
+NUM_CHANNELS = 64
 
 # Noisy Nets
 NOISY_NETS = True

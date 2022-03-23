@@ -26,3 +26,4 @@ NORMALIZE_VALUES = False
 
 # Network architecture
 NUM_FC_HIDDEN_UNITS = 128
+NUM_CHANNELS = 64

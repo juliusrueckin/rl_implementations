@@ -18,13 +18,14 @@ from utils.utils import (
     polyak_averaging,
     compute_grad_norm,
     log_network_params,
-    ValueStats,
+    normalize_values,
 )
 
 
 class SACWrapper:
-    def __init__(self, state_dim: int, num_actions: int, action_limits: torch.tensor, writer: SummaryWriter = None):
-        self.value_stats = ValueStats()
+    def __init__(
+        self, width: int, height: int, num_actions: int, action_limits: torch.tensor, writer: SummaryWriter = None
+    ):
         self.num_actions = num_actions
         self.writer = writer
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -36,16 +37,29 @@ class SACWrapper:
         )
 
         self.policy_net = PolicyNet(
-            state_dim, num_actions, action_limits, num_fc_hidden_units=const.NUM_FC_HIDDEN_UNITS
+            width,
+            height,
+            num_actions,
+            action_limits,
+            num_fc_hidden_units=const.NUM_FC_HIDDEN_UNITS,
+            num_channels=const.NUM_CHANNELS,
         ).to(self.device)
 
-        self.q_net1 = QNet(state_dim, num_actions, num_fc_hidden_units=const.NUM_FC_HIDDEN_UNITS).to(self.device)
-        self.target_q_net1 = QNet(state_dim, num_actions, num_fc_hidden_units=const.NUM_FC_HIDDEN_UNITS).to(self.device)
+        self.q_net1 = QNet(
+            width, height, num_actions, num_fc_hidden_units=const.NUM_FC_HIDDEN_UNITS, num_channels=const.NUM_CHANNELS
+        ).to(self.device)
+        self.target_q_net1 = QNet(
+            width, height, num_actions, num_fc_hidden_units=const.NUM_FC_HIDDEN_UNITS, num_channels=const.NUM_CHANNELS
+        ).to(self.device)
         self.target_q_net1.load_state_dict(self.q_net1.state_dict())
         self.target_q_net1.eval()
 
-        self.q_net2 = QNet(state_dim, num_actions, num_fc_hidden_units=const.NUM_FC_HIDDEN_UNITS).to(self.device)
-        self.target_q_net2 = QNet(state_dim, num_actions, num_fc_hidden_units=const.NUM_FC_HIDDEN_UNITS).to(self.device)
+        self.q_net2 = QNet(
+            width, height, num_actions, num_fc_hidden_units=const.NUM_FC_HIDDEN_UNITS, num_channels=const.NUM_CHANNELS
+        ).to(self.device)
+        self.target_q_net2 = QNet(
+            width, height, num_actions, num_fc_hidden_units=const.NUM_FC_HIDDEN_UNITS, num_channels=const.NUM_CHANNELS
+        ).to(self.device)
         self.target_q_net2.load_state_dict(self.q_net2.state_dict())
         self.target_q_net2.eval()
 
@@ -81,7 +95,7 @@ class SACWrapper:
 
     @staticmethod
     def get_q_value_loss(estimated_q_values: torch.tensor, q_value_targets: torch.tensor) -> torch.Tensor:
-        q_value_loss_fn = nn.SmoothL1Loss(reduction="mean")
+        q_value_loss_fn = nn.MSELoss(reduction="mean")
         return q_value_loss_fn(estimated_q_values, q_value_targets.detach())
 
     def prepare_batch_data(self) -> Tuple[torch.tensor, torch.tensor, torch.tensor, torch.tensor, torch.tensor]:
@@ -126,17 +140,17 @@ class SACWrapper:
                     1 - done_batch.squeeze()
                 ) * (target_next_q_values.squeeze() - const.ENTROPY_COEFF * new_next_log_prob_batch.squeeze())
                 if const.NORMALIZE_VALUES:
-                    target_q_values = self.value_stats.normalize(target_q_values, shift_mean=False)
+                    target_q_values = normalize_values(target_q_values, shift_mean=True)
 
             estimated_q_values1 = self.q_net1(state_batch, action_batch.unsqueeze(1)).squeeze()
-            q_value_loss1 = self.get_q_value_loss(estimated_q_values1, target_q_values)
+            q_value_loss1 = self.get_q_value_loss(estimated_q_values1.float(), target_q_values.float())
             self.q_net1_optimizer.zero_grad()
             q_value_loss1.backward()
             clip_gradients(self.q_net1, const.CLIP_GRAD)
             self.q_net1_optimizer.step()
 
             estimated_q_values2 = self.q_net2(state_batch, action_batch.unsqueeze(1)).squeeze()
-            q_value_loss2 = self.get_q_value_loss(estimated_q_values2, target_q_values)
+            q_value_loss2 = self.get_q_value_loss(estimated_q_values2.float(), target_q_values.float())
             self.q_net2_optimizer.zero_grad()
             q_value_loss2.backward()
             clip_gradients(self.q_net2, const.CLIP_GRAD)
@@ -151,10 +165,10 @@ class SACWrapper:
             estimated_new_q_values = torch.min(
                 self.q_net1(state_batch, new_action_batch), self.q_net2(state_batch, new_action_batch)
             )
-            policy_loss = self.get_policy_loss(log_prob_batch, estimated_new_q_values)
+            policy_loss = self.get_policy_loss(log_prob_batch.float(), estimated_new_q_values.float())
             self.policy_optimizer.zero_grad()
             policy_loss.backward()
-            clip_gradients(self.policy_net)
+            clip_gradients(self.policy_net, const.CLIP_GRAD)
             self.policy_optimizer.step()
 
             for param in self.q_net1.parameters():

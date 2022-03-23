@@ -39,6 +39,7 @@ class DeepQLearningBaseWrapper:
             const.NOISY_SIGMA_INIT,
             const.NUM_ATOMS,
             const.NUM_FC_HIDDEN_UNITS,
+            const.NUM_CHANNELS,
         ).to(self.device)
         self.target_net = get_network(
             network_name,
@@ -49,6 +50,7 @@ class DeepQLearningBaseWrapper:
             const.NOISY_SIGMA_INIT,
             const.NUM_ATOMS,
             const.NUM_FC_HIDDEN_UNITS,
+            const.NUM_CHANNELS,
         ).to(self.device)
         self.target_net.load_state_dict(self.policy_net.state_dict())
         self.target_net.eval()
@@ -285,6 +287,7 @@ class DoubleDeepQLearningWrapper(DeepQLearningBaseWrapper):
             const.NOISY_SIGMA_INIT,
             const.NUM_ATOMS,
             const.NUM_FC_HIDDEN_UNITS,
+            const.NUM_CHANNELS,
         ).to(self.device)
         self.policy_net_eval.load_state_dict(self.policy_net.state_dict())
         self.policy_net_eval.eval()

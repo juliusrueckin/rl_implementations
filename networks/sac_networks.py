@@ -7,26 +7,34 @@ from torch.distributions.independent import Independent
 from torch.distributions.normal import Normal
 from torch.nn import functional as F
 
-from networks.layers import MLPEncoder
+from networks.layers import CNNEncoder
 
 
 class PolicyNet(nn.Module):
-    def __init__(self, state_dim: int, action_dim: int, action_limits: torch.Tensor, num_fc_hidden_units: int = 256):
+    def __init__(
+        self,
+        width: int,
+        height: int,
+        action_dim: int,
+        action_limits: torch.Tensor,
+        num_fc_hidden_units: int = 256,
+        num_channels: int = 64,
+    ):
         super(PolicyNet, self).__init__()
 
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.action_limits = action_limits
 
-        self.encoder = MLPEncoder(state_dim, num_fc_hidden_units)
-        self.fc_mean = nn.Linear(num_fc_hidden_units, num_fc_hidden_units)
-        self.fc_log_std = nn.Linear(num_fc_hidden_units, num_fc_hidden_units)
+        self.encoder = CNNEncoder(num_channels)
+        self.fc_mean = nn.Linear(self.encoder.hidden_dimensions(width, height), num_fc_hidden_units)
+        self.fc_log_std = nn.Linear(self.encoder.hidden_dimensions(width, height), num_fc_hidden_units)
         self.mean_head = nn.Linear(num_fc_hidden_units, action_dim)
         self.log_std_head = nn.Linear(num_fc_hidden_units, action_dim)
 
     def forward(self, x: torch.Tensor) -> Independent:
         x = self.encoder(x)
-        x_mean = F.relu(self.fc_mean(x))
-        x_log_std = F.relu(self.fc_log_std(x))
+        x_mean = F.relu(self.fc_mean(x.view(x.size(0), -1)))
+        x_log_std = F.relu(self.fc_log_std(x.view(x.size(0), -1)))
 
         mean = self.mean_head(x_mean)
         log_std = self.log_std_head(x_log_std)
@@ -47,15 +55,18 @@ class PolicyNet(nn.Module):
 
 
 class QNet(nn.Module):
-    def __init__(self, state_dim: int, action_dim: int, num_fc_hidden_units: int = 256):
+    def __init__(
+        self, width: int, height: int, action_dim: int, num_fc_hidden_units: int = 256, num_channels: int = 64
+    ):
         super(QNet, self).__init__()
 
-        self.encoder = MLPEncoder(state_dim + action_dim, num_fc_hidden_units)
-        self.fc_q_value = nn.Linear(num_fc_hidden_units, num_fc_hidden_units)
+        self.encoder = CNNEncoder(num_channels)
+        self.fc_q_value = nn.Linear(self.encoder.hidden_dimensions(width, height) + action_dim, num_fc_hidden_units)
         self.q_value_head = nn.Linear(num_fc_hidden_units, 1)
 
     def forward(self, x: torch.Tensor, a: torch.Tensor) -> torch.Tensor:
-        x = self.encoder(torch.cat([x, a], dim=1))
+        x = self.encoder(x)
+        x = torch.cat([x.view(x.size(0), -1), a], dim=1)
         x = F.relu(self.fc_q_value(x))
         x = self.q_value_head(x)
 

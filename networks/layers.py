@@ -8,12 +8,12 @@ import q_learning_constants as const
 
 
 class CNNEncoder(nn.Module):
-    def __init__(self):
+    def __init__(self, num_channels: int):
         super(CNNEncoder, self).__init__()
 
-        self.conv1 = nn.Conv2d(const.FRAMES_STACKED, 32, kernel_size=(4, 4), stride=4)
-        self.conv2 = nn.Conv2d(32, 64, kernel_size=(4, 4), stride=2)
-        self.conv3 = nn.Conv2d(64, 64, kernel_size=(3, 3), stride=1)
+        self.conv1 = nn.Conv2d(const.FRAMES_STACKED, int(num_channels / 2), kernel_size=(4, 4), stride=4)
+        self.conv2 = nn.Conv2d(int(num_channels / 2), num_channels, kernel_size=(4, 4), stride=2)
+        self.conv3 = nn.Conv2d(num_channels, num_channels, kernel_size=(3, 3), stride=1)
 
     def hidden_dimensions(self, width: int = 84, height: int = 84) -> int:
         x = F.relu(self.conv1(torch.rand((1, const.FRAMES_STACKED, width, height))))
