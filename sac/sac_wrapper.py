@@ -131,7 +131,9 @@ class SACWrapper:
             ) = self.prepare_batch_data()
 
             with torch.no_grad():
-                new_next_action_batch, new_next_log_prob_batch, _ = self.policy_net.evaluate(next_state_batch)
+                new_next_action_batch, new_next_log_prob_batch, _ = self.policy_net.evaluate(
+                    next_state_batch, reparameterize=False
+                )
                 target_next_q_values = torch.min(
                     self.target_q_net1(next_state_batch, new_next_action_batch),
                     self.target_q_net2(next_state_batch, new_next_action_batch),
@@ -140,7 +142,7 @@ class SACWrapper:
                     1 - done_batch.squeeze()
                 ) * (target_next_q_values.squeeze() - const.ENTROPY_COEFF * new_next_log_prob_batch.squeeze())
                 if const.NORMALIZE_VALUES:
-                    target_q_values = normalize_values(target_q_values, shift_mean=True)
+                    target_q_values = normalize_values(target_q_values, shift_mean=False)
 
             estimated_q_values1 = self.q_net1(state_batch, action_batch.unsqueeze(1)).squeeze()
             q_value_loss1 = self.get_q_value_loss(estimated_q_values1.float(), target_q_values.float())
@@ -161,7 +163,7 @@ class SACWrapper:
             for param in self.q_net2.parameters():
                 param.requires_grad = False
 
-            new_action_batch, log_prob_batch, new_policy = self.policy_net.evaluate(state_batch)
+            new_action_batch, log_prob_batch, new_policy = self.policy_net.evaluate(state_batch, reparameterize=True)
             estimated_new_q_values = torch.min(
                 self.q_net1(state_batch, new_action_batch), self.q_net2(state_batch, new_action_batch)
             )

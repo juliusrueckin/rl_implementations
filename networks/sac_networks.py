@@ -42,15 +42,17 @@ class PolicyNet(nn.Module):
 
         return Independent(Normal(loc=mean, scale=std), reinterpreted_batch_ndims=1)
 
-    def get_action(self, x: torch.Tensor) -> torch.Tensor:
+    def get_action(self, x: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
         policy = self.forward(x)
-        return torch.tanh(policy.sample())
+        action = torch.tanh(policy.sample())
+        u = self.action_limits * action
+        return action, u
 
-    def evaluate(self, x: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor, Independent]:
+    def evaluate(self, x: torch.Tensor, reparameterize: bool = True) -> Tuple[torch.Tensor, torch.Tensor, Independent]:
         policy = self.forward(x)
-        u = policy.rsample()
+        u = policy.rsample() if reparameterize else policy.sample()
         log_prob = policy.log_prob(u) - torch.sum(2 * (np.log(2) - u - F.softplus(-2 * u)), dim=1)
-        action = self.action_limits * torch.tanh(u)
+        action = torch.tanh(u)
         return action, log_prob, policy
 
 

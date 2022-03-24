@@ -42,7 +42,7 @@ for i in range(const.NUM_EPISODES):
             continue
 
         if t % const.ACTION_REPETITIONS != 0:
-            _, reward, done, _ = env.step(action.cpu().numpy())
+            _, reward, done, _ = env.step(u.cpu().numpy())
             episode_return += reward
             if done:
                 sac_wrapper.episode_terminated(episode_return, steps_done)
@@ -51,11 +51,13 @@ for i in range(const.NUM_EPISODES):
             continue
 
         if steps_done < const.MIN_START_STEPS:
-            action = torch.from_numpy(env.action_space.sample()).to(device)
+            u = torch.from_numpy(env.action_space.sample()).to(device)
+            action = torch.tanh(u)
         else:
-            action = sac_wrapper.policy_net.get_action(state_tensor.to(device)).squeeze(1).detach()
+            action, u = sac_wrapper.policy_net.get_action(state_tensor.to(device))
+            action, u = action.squeeze(1), u.squeeze(1)
 
-        _, reward, done, _ = env.step(action.cpu().numpy())
+        _, reward, done, _ = env.step(u.cpu().numpy())
         env.render(mode="rgb_array")
         episode_return += reward
         reward = torch.tensor([reward], device=device)
