@@ -115,7 +115,7 @@ def schedule_clip_epsilon(base_epsilon: float, steps_done: int, total_steps: int
 
 
 def explained_variance(values: torch.Tensor, value_targets: torch.Tensor) -> float:
-    return (1 - (value_targets - values).var()) / value_targets.var()
+    return 1 - (value_targets - values).var() / value_targets.var()
 
 
 def clip_gradients(net: torch.nn.Module, clip_const: float):
