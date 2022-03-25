@@ -34,7 +34,7 @@ class DQN(nn.Module):
 
     def forward(self, x):
         x = self.encoder(x)
-        x = F.relu(self.fc(x.view(x.size(0), -1)))
+        x = F.silu(self.fc(x.view(x.size(0), -1)))
         x = self.head(x)
 
         if self.num_atoms == 1:
@@ -94,10 +94,10 @@ class DuelingDQN(nn.Module):
     def forward(self, x):
         x = self.encoder(x)
 
-        x_value = F.relu(self.fc_value(x.view(x.size(0), -1)))
+        x_value = F.silu(self.fc_value(x.view(x.size(0), -1)))
         x_value = self.head_value(x_value)
 
-        x_advantages = F.relu(self.fc_advantages(x.view(x.size(0), -1)))
+        x_advantages = F.silu(self.fc_advantages(x.view(x.size(0), -1)))
         x_advantages = self.head_advantages(x_advantages)
 
         if self.num_atoms == 1:

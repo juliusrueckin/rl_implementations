@@ -33,8 +33,8 @@ class PolicyNet(nn.Module):
 
     def forward(self, x: torch.Tensor) -> Independent:
         x = self.encoder(x)
-        x_mean = F.relu(self.fc_mean(x.view(x.size(0), -1)))
-        x_log_std = F.relu(self.fc_log_std(x.view(x.size(0), -1)))
+        x_mean = F.silu(self.fc_mean(x.view(x.size(0), -1)))
+        x_log_std = F.silu(self.fc_log_std(x.view(x.size(0), -1)))
 
         mean = self.mean_head(x_mean)
         log_std = self.log_std_head(x_log_std)
@@ -46,13 +46,14 @@ class PolicyNet(nn.Module):
         policy = self.forward(x)
         action = torch.tanh(policy.sample())
         u = self.action_limits * action
-        return action, u
+        return action.detach(), u.detach()
 
     def evaluate(self, x: torch.Tensor, reparameterize: bool = True) -> Tuple[torch.Tensor, torch.Tensor, Independent]:
         policy = self.forward(x)
         u = policy.rsample() if reparameterize else policy.sample()
-        log_prob = policy.log_prob(u) - torch.sum(2 * (np.log(2) - u - F.softplus(-2 * u)), dim=1)
         action = torch.tanh(u)
+        log_prob = policy.log_prob(u) - torch.sum(torch.log(1 - action.pow(2) + 1e-6), dim=1)
+
         return action, log_prob, policy
 
 
@@ -69,7 +70,7 @@ class QNet(nn.Module):
     def forward(self, x: torch.Tensor, a: torch.Tensor) -> torch.Tensor:
         x = self.encoder(x)
         x = torch.cat([x.view(x.size(0), -1), a], dim=1)
-        x = F.relu(self.fc_q_value(x))
+        x = F.silu(self.fc_q_value(x))
         x = self.q_value_head(x)
 
         return x

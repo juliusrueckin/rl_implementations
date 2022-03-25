@@ -16,16 +16,16 @@ class CNNEncoder(nn.Module):
         self.conv3 = nn.Conv2d(num_channels, num_channels, kernel_size=(3, 3), stride=1)
 
     def hidden_dimensions(self, width: int = 84, height: int = 84) -> int:
-        x = F.relu(self.conv1(torch.rand((1, const.FRAMES_STACKED, width, height))))
-        x = F.relu(self.conv2(x))
-        x = F.relu(self.conv3(x))
+        x = F.silu(self.conv1(torch.rand((1, const.FRAMES_STACKED, width, height))))
+        x = F.silu(self.conv2(x))
+        x = F.silu(self.conv3(x))
 
         return int(torch.prod(torch.tensor(x.size())))
 
     def forward(self, x):
-        x = F.relu(self.conv1(x))
-        x = F.relu(self.conv2(x))
-        x = F.relu(self.conv3(x))
+        x = F.silu(self.conv1(x))
+        x = F.silu(self.conv2(x))
+        x = F.silu(self.conv3(x))
 
         return x
 
@@ -39,9 +39,9 @@ class MLPEncoder(nn.Module):
         self.fc3 = nn.Linear(num_hidden_units, num_hidden_units)
 
     def forward(self, x):
-        x = F.relu(self.fc1(x))
-        x = F.relu(self.fc2(x))
-        x = F.relu(self.fc3(x))
+        x = F.silu(self.fc1(x))
+        x = F.silu(self.fc2(x))
+        x = F.silu(self.fc3(x))
 
         return x
 

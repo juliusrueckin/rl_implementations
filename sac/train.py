@@ -70,7 +70,7 @@ for i in range(const.NUM_EPISODES):
         next_state_tensor = torch.stack(tuple(next_state), dim=1)
         sac_wrapper.replay_buffer.push(state_tensor, action, next_state_tensor, reward, done_tensor)
 
-        if steps_done >= const.MIN_START_STEPS:
+        if steps_done >= const.MIN_START_STEPS and steps_done % const.OPTIMIZATION_UPDATE == 0:
             sac_wrapper.optimize_model(steps_done)
 
         if steps_done % const.TARGET_UPDATE == 0:

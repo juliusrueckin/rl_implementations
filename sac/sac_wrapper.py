@@ -18,7 +18,7 @@ from utils.utils import (
     polyak_averaging,
     compute_grad_norm,
     log_network_params,
-    normalize_values,
+    ValueStats,
 )
 
 
@@ -26,6 +26,7 @@ class SACWrapper:
     def __init__(
         self, width: int, height: int, num_actions: int, action_limits: torch.tensor, writer: SummaryWriter = None
     ):
+        self.value_stats = ValueStats()
         self.num_actions = num_actions
         self.writer = writer
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -130,6 +131,8 @@ class SACWrapper:
                 done_batch,
             ) = self.prepare_batch_data()
 
+            new_action_batch, log_prob_batch, new_policy = self.policy_net.evaluate(state_batch, reparameterize=True)
+
             with torch.no_grad():
                 new_next_action_batch, new_next_log_prob_batch, _ = self.policy_net.evaluate(
                     next_state_batch, reparameterize=False
@@ -142,41 +145,32 @@ class SACWrapper:
                     1 - done_batch.squeeze()
                 ) * (target_next_q_values.squeeze() - const.ENTROPY_COEFF * new_next_log_prob_batch.squeeze())
                 if const.NORMALIZE_VALUES:
-                    target_q_values = normalize_values(target_q_values, shift_mean=False)
+                    target_q_values = self.value_stats.normalize(target_q_values, shift_mean=False)
 
             estimated_q_values1 = self.q_net1(state_batch, action_batch.unsqueeze(1)).squeeze()
+            estimated_q_values2 = self.q_net2(state_batch, action_batch.unsqueeze(1)).squeeze()
             q_value_loss1 = self.get_q_value_loss(estimated_q_values1.float(), target_q_values.float())
+            q_value_loss2 = self.get_q_value_loss(estimated_q_values2.float(), target_q_values.float())
+
             self.q_net1_optimizer.zero_grad()
             q_value_loss1.backward()
             clip_gradients(self.q_net1, const.CLIP_GRAD)
             self.q_net1_optimizer.step()
 
-            estimated_q_values2 = self.q_net2(state_batch, action_batch.unsqueeze(1)).squeeze()
-            q_value_loss2 = self.get_q_value_loss(estimated_q_values2.float(), target_q_values.float())
             self.q_net2_optimizer.zero_grad()
             q_value_loss2.backward()
             clip_gradients(self.q_net2, const.CLIP_GRAD)
             self.q_net2_optimizer.step()
 
-            for param in self.q_net1.parameters():
-                param.requires_grad = False
-            for param in self.q_net2.parameters():
-                param.requires_grad = False
-
-            new_action_batch, log_prob_batch, new_policy = self.policy_net.evaluate(state_batch, reparameterize=True)
             estimated_new_q_values = torch.min(
                 self.q_net1(state_batch, new_action_batch), self.q_net2(state_batch, new_action_batch)
             )
             policy_loss = self.get_policy_loss(log_prob_batch.float(), estimated_new_q_values.float())
+
             self.policy_optimizer.zero_grad()
             policy_loss.backward()
             clip_gradients(self.policy_net, const.CLIP_GRAD)
             self.policy_optimizer.step()
-
-            for param in self.q_net1.parameters():
-                param.requires_grad = True
-            for param in self.q_net2.parameters():
-                param.requires_grad = True
 
         if self.writer:
             self.track_tensorboard_metrics(

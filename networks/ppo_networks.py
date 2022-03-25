@@ -29,8 +29,8 @@ class PPONet(nn.Module):
     def forward(self, x: torch.Tensor) -> Tuple[Categorical, torch.Tensor]:
         x = self.encoder(x)
 
-        x_policy = F.relu(self.fc_policy(x.view(x.size(0), -1)))
-        x_value = F.relu(self.fc_value(x.view(x.size(0), -1)))
+        x_policy = F.silu(self.fc_policy(x.view(x.size(0), -1)))
+        x_value = F.silu(self.fc_value(x.view(x.size(0), -1)))
 
         x_policy = self.policy_head(x_policy)
         policy = F.softmax(x_policy, dim=1)
@@ -58,7 +58,7 @@ class PolicyNet(nn.Module):
 
     def forward(self, x: torch.Tensor) -> Categorical:
         x = self.encoder(x)
-        x = F.relu(self.fc_policy(x.view(x.size(0), -1)))
+        x = F.silu(self.fc_policy(x.view(x.size(0), -1)))
         x_policy = self.policy_head(x)
         policy = F.softmax(x_policy, dim=1)
 
@@ -83,7 +83,7 @@ class ValueNet(nn.Module):
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         x = self.encoder(x)
-        x = F.relu(self.fc_value(x.view(x.size(0), -1)))
+        x = F.silu(self.fc_value(x.view(x.size(0), -1)))
         x = self.value_head(x)
 
         return x
