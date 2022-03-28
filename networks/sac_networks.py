@@ -26,6 +26,7 @@ class PolicyNet(nn.Module):
         self.action_limits = action_limits
 
         self.encoder = CNNEncoder(num_frames, num_channels)
+        self.flatten = nn.Flatten()
         self.fc_mean = nn.Linear(self.encoder.hidden_dimensions(width, height), num_fc_hidden_units)
         self.fc_log_std = nn.Linear(self.encoder.hidden_dimensions(width, height), num_fc_hidden_units)
         self.mean_head = nn.Linear(num_fc_hidden_units, action_dim)
@@ -33,8 +34,9 @@ class PolicyNet(nn.Module):
 
     def forward(self, x: torch.Tensor) -> Independent:
         x = self.encoder(x)
-        x_mean = F.silu(self.fc_mean(x.view(x.size(0), -1)))
-        x_log_std = F.silu(self.fc_log_std(x.view(x.size(0), -1)))
+        x = self.flatten(x)
+        x_mean = F.silu(self.fc_mean(x))
+        x_log_std = F.silu(self.fc_log_std(x))
 
         mean = self.mean_head(x_mean)
         log_std = self.log_std_head(x_log_std)
@@ -70,12 +72,13 @@ class QNet(nn.Module):
         super(QNet, self).__init__()
 
         self.encoder = CNNEncoder(num_frames, num_channels)
+        self.flatten = nn.Flatten()
         self.fc_q_value = nn.Linear(self.encoder.hidden_dimensions(width, height) + action_dim, num_fc_hidden_units)
         self.q_value_head = nn.Linear(num_fc_hidden_units, 1)
 
     def forward(self, x: torch.Tensor, a: torch.Tensor) -> torch.Tensor:
         x = self.encoder(x)
-        x = torch.cat([x.view(x.size(0), -1), a], dim=1)
+        x = torch.cat([self.flatten(x), a], dim=1)
         x = F.silu(self.fc_q_value(x))
         x = self.q_value_head(x)
 

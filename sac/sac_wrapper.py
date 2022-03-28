@@ -118,8 +118,8 @@ class SACWrapper:
                 polyak_averaging(self.target_q_net2, self.q_net2, const.TAU)
 
     @staticmethod
-    def get_policy_loss(log_probs: torch.tensor, q_values: torch.tensor, ent_coef: torch.tensor) -> torch.tensor:
-        return (ent_coef * log_probs - q_values).mean()
+    def get_policy_loss(log_probs: torch.tensor, q_values: torch.tensor, ent_coeff: torch.tensor) -> torch.tensor:
+        return (ent_coeff * log_probs - q_values).mean()
 
     @staticmethod
     def get_q_value_loss(estimated_q_values: torch.tensor, q_value_targets: torch.tensor) -> torch.Tensor:
@@ -197,7 +197,8 @@ class SACWrapper:
             self.q_net2_optimizer.step()
 
             estimated_new_q_values = torch.min(
-                self.q_net1(state_batch, new_action_batch), self.q_net2(state_batch, new_action_batch)
+                self.q_net1(state_batch, new_action_batch).squeeze(),
+                self.q_net2(state_batch, new_action_batch).squeeze(),
             )
             policy_loss = self.get_policy_loss(log_prob_batch.float(), estimated_new_q_values.float(), entropy_coeff)
 

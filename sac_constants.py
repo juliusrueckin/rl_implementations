@@ -27,7 +27,7 @@ GAMMA = 0.99
 NORMALIZE_VALUES = False
 
 # Network architecture
-NUM_FC_HIDDEN_UNITS = 128
+NUM_FC_HIDDEN_UNITS = 256
 NUM_CHANNELS = 64
 
 # Replay buffer

@@ -26,6 +26,7 @@ class DQN(nn.Module):
         self.num_atoms = num_atoms
 
         self.encoder = CNNEncoder(num_frames, num_channels)
+        self.flatten = nn.Flatten()
         self.fc = nn.Linear(self.encoder.hidden_dimensions(width, height), num_fc_hidden_units)
         self.head = nn.Linear(num_fc_hidden_units, num_actions * num_atoms)
 
@@ -35,7 +36,7 @@ class DQN(nn.Module):
 
     def forward(self, x):
         x = self.encoder(x)
-        x = F.silu(self.fc(x.view(x.size(0), -1)))
+        x = F.silu(self.fc(self.flatten(x)))
         x = self.head(x)
 
         if self.num_atoms == 1:
@@ -74,6 +75,7 @@ class DuelingDQN(nn.Module):
         self.num_atoms = num_atoms
 
         self.encoder = CNNEncoder(num_frames, num_channels)
+        self.flatten = nn.Flatten()
 
         self.fc_advantages = nn.Linear(self.encoder.hidden_dimensions(width, height), num_fc_hidden_units)
         self.head_advantages = nn.Linear(num_fc_hidden_units, num_actions * num_atoms)
@@ -95,11 +97,12 @@ class DuelingDQN(nn.Module):
 
     def forward(self, x):
         x = self.encoder(x)
+        x = self.flatten(x)
 
-        x_value = F.silu(self.fc_value(x.view(x.size(0), -1)))
+        x_value = F.silu(self.fc_value(x))
         x_value = self.head_value(x_value)
 
-        x_advantages = F.silu(self.fc_advantages(x.view(x.size(0), -1)))
+        x_advantages = F.silu(self.fc_advantages(x))
         x_advantages = self.head_advantages(x_advantages)
 
         if self.num_atoms == 1:

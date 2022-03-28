@@ -10,16 +10,17 @@ class CNNEncoder(nn.Module):
         super(CNNEncoder, self).__init__()
 
         self.num_frames = num_frames
-        self.conv1 = nn.Conv2d(num_frames, int(num_channels / 2), kernel_size=(4, 4), stride=4)
+        self.conv1 = nn.Conv2d(num_frames, int(num_channels / 2), kernel_size=(4, 4), stride=2)
         self.conv2 = nn.Conv2d(int(num_channels / 2), num_channels, kernel_size=(4, 4), stride=2)
-        self.conv3 = nn.Conv2d(num_channels, num_channels, kernel_size=(3, 3), stride=1)
+        self.conv3 = nn.Conv2d(num_channels, num_channels, kernel_size=(3, 3), stride=2)
 
     def hidden_dimensions(self, width: int = 84, height: int = 84) -> int:
-        x = F.silu(self.conv1(torch.rand((1, self.num_frames, width, height))))
-        x = F.silu(self.conv2(x))
-        x = F.silu(self.conv3(x))
+        with torch.no_grad():
+            x = F.silu(self.conv1(torch.rand((1, self.num_frames, width, height))))
+            x = F.silu(self.conv2(x))
+            x = F.silu(self.conv3(x))
 
-        return int(torch.prod(torch.tensor(x.size())))
+            return int(torch.prod(torch.tensor(x.size())))
 
     def forward(self, x):
         x = F.silu(self.conv1(x))
