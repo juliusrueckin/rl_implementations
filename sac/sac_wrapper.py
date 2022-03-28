@@ -92,6 +92,12 @@ class SACWrapper:
         self.episode_returns = deque([], maxlen=const.EPISODES_PATIENCE)
         self.max_mean_episode_return = -np.inf
 
+        self.log_entropy_coeff = torch.log(torch.ones(1, device=self.device) * const.INIT_ENTROPY_COEFF).requires_grad_(
+            True
+        )
+        self.entropy_coeff_optimizer = torch.optim.Adam([self.log_entropy_coeff], lr=const.ENTROPY_LEARNING_RATE)
+        self.target_entropy = float(num_actions)
+
     def episode_terminated(self, episode_return: float, steps_done: int):
         self.writer.add_scalar("Episode/Return", episode_return, steps_done)
         self.episode_returns.append(episode_return)
@@ -112,8 +118,8 @@ class SACWrapper:
                 polyak_averaging(self.target_q_net2, self.q_net2, const.TAU)
 
     @staticmethod
-    def get_policy_loss(log_probs: torch.tensor, q_values: torch.tensor) -> torch.tensor:
-        return (const.ENTROPY_COEFF * log_probs - q_values).mean()
+    def get_policy_loss(log_probs: torch.tensor, q_values: torch.tensor, ent_coef: torch.tensor) -> torch.tensor:
+        return (ent_coef * log_probs - q_values).mean()
 
     @staticmethod
     def get_q_value_loss(estimated_q_values: torch.tensor, q_value_targets: torch.tensor) -> torch.Tensor:
@@ -154,6 +160,13 @@ class SACWrapper:
 
             new_action_batch, log_prob_batch, new_policy = self.policy_net.evaluate(state_batch, reparameterize=True)
 
+            entropy_coeff = torch.exp(self.log_entropy_coeff.detach())
+            entropy_coeff_loss = -(self.log_entropy_coeff * (log_prob_batch + self.target_entropy).detach()).mean()
+
+            self.entropy_coeff_optimizer.zero_grad()
+            entropy_coeff_loss.backward()
+            self.entropy_coeff_optimizer.step()
+
             with torch.no_grad():
                 new_next_action_batch, new_next_log_prob_batch, _ = self.policy_net.evaluate(
                     next_state_batch, reparameterize=False
@@ -164,7 +177,7 @@ class SACWrapper:
                 )
                 target_q_values = reward_batch.squeeze() + (const.GAMMA ** const.N_STEP_RETURNS) * (
                     1 - done_batch.squeeze()
-                ) * (target_next_q_values.squeeze() - const.ENTROPY_COEFF * new_next_log_prob_batch.squeeze())
+                ) * (target_next_q_values.squeeze() - entropy_coeff * new_next_log_prob_batch.squeeze())
                 if const.NORMALIZE_VALUES:
                     target_q_values = self.value_stats.normalize(target_q_values, shift_mean=False)
 
@@ -186,7 +199,7 @@ class SACWrapper:
             estimated_new_q_values = torch.min(
                 self.q_net1(state_batch, new_action_batch), self.q_net2(state_batch, new_action_batch)
             )
-            policy_loss = self.get_policy_loss(log_prob_batch.float(), estimated_new_q_values.float())
+            policy_loss = self.get_policy_loss(log_prob_batch.float(), estimated_new_q_values.float(), entropy_coeff)
 
             self.policy_optimizer.zero_grad()
             policy_loss.backward()
@@ -203,6 +216,8 @@ class SACWrapper:
                 target_q_values,
                 explained_variance(estimated_q_values1, target_q_values),
                 new_policy,
+                entropy_coeff.item(),
+                entropy_coeff_loss,
             )
 
     def track_tensorboard_metrics(
@@ -215,23 +230,28 @@ class SACWrapper:
         target_q_values: torch.tensor,
         explained_var: float,
         policy: Independent,
+        entropy_coeff: float,
+        entropy_coeff_loss: float,
     ):
-        self.writer.add_scalar(f"Training/Policy-Entropy", policy.entropy().mean(), steps_done)
-        self.writer.add_scalar(f"Training/Policy-Mean", policy.base_dist.loc.mean(), steps_done)
-        self.writer.add_scalar(f"Training/Policy-Std", policy.base_dist.scale.mean(), steps_done)
-        self.writer.add_scalar("Training/Policy-Loss", policy_loss, steps_done)
+        self.writer.add_scalar(f"Policy/Entropy", policy.entropy().mean(), steps_done)
+        self.writer.add_scalar(f"Policy/Entropy-Coefficient", entropy_coeff, steps_done)
+        self.writer.add_scalar(f"Policy/Entropy-Coefficient-Loss", entropy_coeff_loss, steps_done)
 
-        self.writer.add_scalar("Training/Q-Value1-Loss", q_value_loss1, steps_done)
-        self.writer.add_scalar("Training/Q-Value2-Loss", q_value_loss2, steps_done)
-        self.writer.add_scalar("Training/Q-Value1-Estimation", estimated_q_values.mean(), steps_done)
-        self.writer.add_scalar("Training/Q-Value-Target", target_q_values.mean(), steps_done)
-        self.writer.add_scalar("Training/Q-Value-Explained-Variance", explained_var, steps_done)
+        self.writer.add_scalar(f"Policy/Mean", policy.base_dist.loc.mean(), steps_done)
+        self.writer.add_scalar(f"Policy/Std", policy.base_dist.scale.mean(), steps_done)
+        self.writer.add_scalar("Policy/Loss", policy_loss, steps_done)
 
-        self.writer.add_scalar(f"Training/Policy-GradNorm", compute_grad_norm(self.policy_net), steps_done)
-        self.writer.add_scalar(f"Training/Q-Value1-GradNorm", compute_grad_norm(self.q_net1), steps_done)
-        self.writer.add_scalar(f"Training/Q-Value2-GradNorm", compute_grad_norm(self.q_net2), steps_done)
+        self.writer.add_scalar("Q-Value/1-Loss", q_value_loss1, steps_done)
+        self.writer.add_scalar("Q-Value/2-Loss", q_value_loss2, steps_done)
+        self.writer.add_scalar("Q-Value/1-Estimation", estimated_q_values.mean(), steps_done)
+        self.writer.add_scalar("Q-Value/Target", target_q_values.mean(), steps_done)
+        self.writer.add_scalar("Q-Value/Explained-Variance", explained_var, steps_done)
+
+        self.writer.add_scalar(f"Policy/GradNorm", compute_grad_norm(self.policy_net), steps_done)
+        self.writer.add_scalar(f"Q-Value/1-GradNorm", compute_grad_norm(self.q_net1), steps_done)
+        self.writer.add_scalar(f"Q-Value/2-GradNorm", compute_grad_norm(self.q_net2), steps_done)
 
         if steps_done % 500 == 0:
-            log_network_params(self.policy_net, self.writer, steps_done, "Policy-Parameters")
-            log_network_params(self.q_net1, self.writer, steps_done, "Q1-Net-Parameters")
-            log_network_params(self.q_net2, self.writer, steps_done, "Q2-Net-Parameters")
+            log_network_params(self.policy_net, self.writer, steps_done, "Policy-Net")
+            log_network_params(self.q_net1, self.writer, steps_done, "Q1-Net")
+            log_network_params(self.q_net2, self.writer, steps_done, "Q2-Net")
