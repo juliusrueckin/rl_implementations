@@ -9,6 +9,7 @@ class DQN(nn.Module):
         self,
         width: int,
         height: int,
+        num_frames: int,
         num_actions: int,
         noisy_net: bool = False,
         noisy_std_init: float = 0.5,
@@ -24,7 +25,7 @@ class DQN(nn.Module):
         self.num_actions = num_actions
         self.num_atoms = num_atoms
 
-        self.encoder = CNNEncoder(num_channels)
+        self.encoder = CNNEncoder(num_frames, num_channels)
         self.fc = nn.Linear(self.encoder.hidden_dimensions(width, height), num_fc_hidden_units)
         self.head = nn.Linear(num_fc_hidden_units, num_actions * num_atoms)
 
@@ -56,6 +57,7 @@ class DuelingDQN(nn.Module):
         self,
         width: int,
         height: int,
+        num_frames: int,
         num_actions: int,
         noisy_net: bool = False,
         noisy_std_init: float = 0.5,
@@ -71,7 +73,7 @@ class DuelingDQN(nn.Module):
         self.num_actions = num_actions
         self.num_atoms = num_atoms
 
-        self.encoder = CNNEncoder(num_channels)
+        self.encoder = CNNEncoder(num_frames, num_channels)
 
         self.fc_advantages = nn.Linear(self.encoder.hidden_dimensions(width, height), num_fc_hidden_units)
         self.head_advantages = nn.Linear(num_fc_hidden_units, num_actions * num_atoms)

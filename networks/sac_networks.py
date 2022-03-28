@@ -1,6 +1,5 @@
 from typing import Tuple
 
-import numpy as np
 import torch
 from torch import nn
 from torch.distributions.independent import Independent
@@ -15,6 +14,7 @@ class PolicyNet(nn.Module):
         self,
         width: int,
         height: int,
+        num_frames: int,
         action_dim: int,
         action_limits: torch.Tensor,
         num_fc_hidden_units: int = 256,
@@ -25,7 +25,7 @@ class PolicyNet(nn.Module):
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.action_limits = action_limits
 
-        self.encoder = CNNEncoder(num_channels)
+        self.encoder = CNNEncoder(num_frames, num_channels)
         self.fc_mean = nn.Linear(self.encoder.hidden_dimensions(width, height), num_fc_hidden_units)
         self.fc_log_std = nn.Linear(self.encoder.hidden_dimensions(width, height), num_fc_hidden_units)
         self.mean_head = nn.Linear(num_fc_hidden_units, action_dim)
@@ -59,11 +59,17 @@ class PolicyNet(nn.Module):
 
 class QNet(nn.Module):
     def __init__(
-        self, width: int, height: int, action_dim: int, num_fc_hidden_units: int = 256, num_channels: int = 64
+        self,
+        width: int,
+        height: int,
+        num_frames: int,
+        action_dim: int,
+        num_fc_hidden_units: int = 256,
+        num_channels: int = 64,
     ):
         super(QNet, self).__init__()
 
-        self.encoder = CNNEncoder(num_channels)
+        self.encoder = CNNEncoder(num_frames, num_channels)
         self.fc_q_value = nn.Linear(self.encoder.hidden_dimensions(width, height) + action_dim, num_fc_hidden_units)
         self.q_value_head = nn.Linear(num_fc_hidden_units, 1)
 

@@ -40,6 +40,7 @@ class SACWrapper:
         self.policy_net = PolicyNet(
             width,
             height,
+            const.FRAMES_STACKED,
             num_actions,
             action_limits,
             num_fc_hidden_units=const.NUM_FC_HIDDEN_UNITS,
@@ -47,19 +48,39 @@ class SACWrapper:
         ).to(self.device)
 
         self.q_net1 = QNet(
-            width, height, num_actions, num_fc_hidden_units=const.NUM_FC_HIDDEN_UNITS, num_channels=const.NUM_CHANNELS
+            width,
+            height,
+            const.FRAMES_STACKED,
+            num_actions,
+            num_fc_hidden_units=const.NUM_FC_HIDDEN_UNITS,
+            num_channels=const.NUM_CHANNELS,
         ).to(self.device)
         self.target_q_net1 = QNet(
-            width, height, num_actions, num_fc_hidden_units=const.NUM_FC_HIDDEN_UNITS, num_channels=const.NUM_CHANNELS
+            width,
+            height,
+            const.FRAMES_STACKED,
+            num_actions,
+            num_fc_hidden_units=const.NUM_FC_HIDDEN_UNITS,
+            num_channels=const.NUM_CHANNELS,
         ).to(self.device)
         self.target_q_net1.load_state_dict(self.q_net1.state_dict())
         self.target_q_net1.eval()
 
         self.q_net2 = QNet(
-            width, height, num_actions, num_fc_hidden_units=const.NUM_FC_HIDDEN_UNITS, num_channels=const.NUM_CHANNELS
+            width,
+            height,
+            const.FRAMES_STACKED,
+            num_actions,
+            num_fc_hidden_units=const.NUM_FC_HIDDEN_UNITS,
+            num_channels=const.NUM_CHANNELS,
         ).to(self.device)
         self.target_q_net2 = QNet(
-            width, height, num_actions, num_fc_hidden_units=const.NUM_FC_HIDDEN_UNITS, num_channels=const.NUM_CHANNELS
+            width,
+            height,
+            const.FRAMES_STACKED,
+            num_actions,
+            num_fc_hidden_units=const.NUM_FC_HIDDEN_UNITS,
+            num_channels=const.NUM_CHANNELS,
         ).to(self.device)
         self.target_q_net2.load_state_dict(self.q_net2.state_dict())
         self.target_q_net2.eval()

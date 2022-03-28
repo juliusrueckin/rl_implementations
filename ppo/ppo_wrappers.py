@@ -22,19 +22,39 @@ class PPOWrapper:
         self.batch_memory = BatchMemory(const.BATCH_SIZE)
 
         self.policy_net = PolicyNet(
-            width, height, num_actions, num_fc_hidden_units=const.NUM_FC_HIDDEN_UNITS, num_channels=const.NUM_CHANNELS
+            width,
+            height,
+            const.FRAMES_STACKED,
+            num_actions,
+            num_fc_hidden_units=const.NUM_FC_HIDDEN_UNITS,
+            num_channels=const.NUM_CHANNELS,
         ).to(self.device)
         self.policy_net_old = PolicyNet(
-            width, height, num_actions, num_fc_hidden_units=const.NUM_FC_HIDDEN_UNITS, num_channels=const.NUM_CHANNELS
+            width,
+            height,
+            const.FRAMES_STACKED,
+            num_actions,
+            num_fc_hidden_units=const.NUM_FC_HIDDEN_UNITS,
+            num_channels=const.NUM_CHANNELS,
         ).to(self.device)
         self.policy_net_old.load_state_dict(self.policy_net.state_dict())
         self.policy_net_old.eval()
 
         self.value_net = ValueNet(
-            width, height, num_actions, num_fc_hidden_units=const.NUM_FC_HIDDEN_UNITS, num_channels=const.NUM_CHANNELS
+            width,
+            height,
+            const.FRAMES_STACKED,
+            num_actions,
+            num_fc_hidden_units=const.NUM_FC_HIDDEN_UNITS,
+            num_channels=const.NUM_CHANNELS,
         ).to(self.device)
         self.value_net_old = ValueNet(
-            width, height, num_actions, num_fc_hidden_units=const.NUM_FC_HIDDEN_UNITS, num_channels=const.NUM_CHANNELS
+            width,
+            height,
+            const.FRAMES_STACKED,
+            num_actions,
+            num_fc_hidden_units=const.NUM_FC_HIDDEN_UNITS,
+            num_channels=const.NUM_CHANNELS,
         ).to(self.device)
         self.value_net_old.load_state_dict(self.value_net.state_dict())
         self.value_net_old.eval()
