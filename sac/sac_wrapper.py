@@ -19,6 +19,7 @@ from utils.utils import (
     compute_grad_norm,
     log_network_params,
     ValueStats,
+    normalize_values,
 )
 
 
@@ -96,7 +97,7 @@ class SACWrapper:
             True
         )
         self.entropy_coeff_optimizer = torch.optim.Adam([self.log_entropy_coeff], lr=const.ENTROPY_LEARNING_RATE)
-        self.target_entropy = float(num_actions)
+        self.target_entropy = -float(num_actions)
 
     def episode_terminated(self, episode_return: float, steps_done: int):
         self.writer.add_scalar("Episode/Return", episode_return, steps_done)
@@ -119,7 +120,7 @@ class SACWrapper:
 
     @staticmethod
     def get_policy_loss(log_probs: torch.tensor, q_values: torch.tensor, ent_coeff: torch.tensor) -> torch.tensor:
-        return (ent_coeff * log_probs - q_values).mean()
+        return (ent_coeff.detach() * log_probs - q_values).mean()
 
     @staticmethod
     def get_q_value_loss(estimated_q_values: torch.tensor, q_value_targets: torch.tensor) -> torch.Tensor:
@@ -160,7 +161,7 @@ class SACWrapper:
 
             new_action_batch, log_prob_batch, new_policy = self.policy_net.evaluate(state_batch, reparameterize=True)
 
-            entropy_coeff = torch.exp(self.log_entropy_coeff.detach())
+            entropy_coeff = torch.exp(self.log_entropy_coeff).detach()
             entropy_coeff_loss = -(self.log_entropy_coeff * (log_prob_batch + self.target_entropy).detach()).mean()
 
             self.entropy_coeff_optimizer.zero_grad()
@@ -177,9 +178,9 @@ class SACWrapper:
                 )
                 target_q_values = reward_batch.squeeze() + (const.GAMMA ** const.N_STEP_RETURNS) * (
                     1 - done_batch.squeeze()
-                ) * (target_next_q_values.squeeze() - entropy_coeff * new_next_log_prob_batch.squeeze())
+                ) * (target_next_q_values.squeeze() - entropy_coeff.detach() * new_next_log_prob_batch.squeeze())
                 if const.NORMALIZE_VALUES:
-                    target_q_values = self.value_stats.normalize(target_q_values, shift_mean=False)
+                    target_q_values = normalize_values(target_q_values, shift_mean=False)
 
             estimated_q_values1 = self.q_net1(state_batch, action_batch.unsqueeze(1)).squeeze()
             estimated_q_values2 = self.q_net2(state_batch, action_batch.unsqueeze(1)).squeeze()
