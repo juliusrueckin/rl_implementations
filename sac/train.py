@@ -19,9 +19,8 @@ env.reset()
 init_screen = utils.get_pendulum_screen(env, const.INPUT_SIZE)
 _, screen_height, screen_width = init_screen.shape
 action_dim = env.action_space.shape[0]
-action_limits = torch.from_numpy(env.action_space.high).to(device=device).unsqueeze(0)
+action_limits = torch.from_numpy(env.action_space.high).to(device=device)
 steps_done = 0
-
 sac_wrapper = SACWrapper(screen_width, screen_height, action_dim, action_limits, writer=writer)
 
 for i in range(const.NUM_EPISODES):

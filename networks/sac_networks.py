@@ -6,7 +6,7 @@ from torch.distributions.independent import Independent
 from torch.distributions.normal import Normal
 from torch.nn import functional as F
 
-from networks.layers import CNNEncoder
+from networks.layers import CNNEncoder, MLPEncoder
 
 
 class PolicyNet(nn.Module):
@@ -27,18 +27,23 @@ class PolicyNet(nn.Module):
 
         self.encoder = CNNEncoder(num_frames, num_channels)
         self.flatten = nn.Flatten()
+        self.layer_norm1 = nn.LayerNorm(self.encoder.hidden_dimensions(width, height))
         self.fc_mean = nn.Linear(self.encoder.hidden_dimensions(width, height), num_fc_hidden_units)
+        self.layer_norm2 = nn.LayerNorm(num_fc_hidden_units)
         self.fc_log_std = nn.Linear(self.encoder.hidden_dimensions(width, height), num_fc_hidden_units)
+        self.layer_norm3 = nn.LayerNorm(num_fc_hidden_units)
         self.mean_head = nn.Linear(num_fc_hidden_units, action_dim)
         self.log_std_head = nn.Linear(num_fc_hidden_units, action_dim)
 
     def forward(self, x: torch.Tensor) -> Independent:
         x = self.encoder(x)
         x = self.flatten(x)
-        x_mean = F.silu(self.fc_mean(x))
-        x_log_std = F.silu(self.fc_log_std(x))
+        x = self.layer_norm1(x)
 
+        x_mean = F.silu(self.layer_norm2(self.fc_mean(x)))
         mean = self.mean_head(x_mean)
+
+        x_log_std = F.silu(self.layer_norm3(self.fc_log_std(x)))
         log_std = self.log_std_head(x_log_std)
         std = torch.exp(torch.clamp(log_std, -20, 2))
 
@@ -73,13 +78,16 @@ class QNet(nn.Module):
 
         self.encoder = CNNEncoder(num_frames, num_channels)
         self.flatten = nn.Flatten()
+        self.layer_norm1 = nn.LayerNorm(self.encoder.hidden_dimensions(width, height))
         self.fc_q_value = nn.Linear(self.encoder.hidden_dimensions(width, height) + action_dim, num_fc_hidden_units)
+        self.layer_norm2 = nn.LayerNorm(num_fc_hidden_units)
         self.q_value_head = nn.Linear(num_fc_hidden_units, 1)
 
     def forward(self, x: torch.Tensor, a: torch.Tensor) -> torch.Tensor:
         x = self.encoder(x)
-        x = torch.cat([self.flatten(x), a], dim=1)
-        x = F.silu(self.fc_q_value(x))
+        x = self.layer_norm1(self.flatten(x))
+        x = torch.cat([x, a], dim=1)
+        x = F.silu(self.layer_norm2(self.fc_q_value(x)))
         x = self.q_value_head(x)
 
         return x
