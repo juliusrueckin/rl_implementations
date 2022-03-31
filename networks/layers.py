@@ -6,7 +6,7 @@ from torch import nn
 
 
 class CNNEncoder(nn.Module):
-    def __init__(self, width: int, height: int, num_frames: int, num_channels: int, num_fc_hidden_units: int):
+    def __init__(self, width: int, height: int, num_frames: int, num_channels: int, num_latent_dims: int):
         super(CNNEncoder, self).__init__()
 
         self.num_frames = num_frames
@@ -15,8 +15,8 @@ class CNNEncoder(nn.Module):
         self.conv3 = nn.Conv2d(num_channels, num_channels, kernel_size=(3, 3), stride=2)
 
         self.flatten = nn.Flatten()
-        self.fc = nn.Linear(self.hidden_dimensions(width, height), num_fc_hidden_units)
-        self.layer_norm = nn.LayerNorm(num_fc_hidden_units)
+        self.fc = nn.Linear(self.hidden_dimensions(width, height), num_latent_dims)
+        self.layer_norm = nn.LayerNorm(num_latent_dims)
 
     def hidden_dimensions(self, width: int = 84, height: int = 84) -> int:
         with torch.no_grad():
@@ -26,12 +26,15 @@ class CNNEncoder(nn.Module):
 
             return int(torch.prod(torch.tensor(x.size())))
 
-    def forward(self, x):
+    def forward(self, x: torch.Tensor, detach: bool = False) -> torch.Tensor:
         x = F.silu(self.conv1(x))
         x = F.silu(self.conv2(x))
         x = F.silu(self.conv3(x))
-
         x = self.flatten(x)
+
+        if detach:
+            x = x.detach()
+
         x = F.silu(self.layer_norm(self.fc(x)))
 
         return x

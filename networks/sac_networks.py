@@ -6,7 +6,7 @@ from torch.distributions.independent import Independent
 from torch.distributions.normal import Normal
 from torch.nn import functional as F
 
-from networks.layers import CNNEncoder, MLPEncoder
+from networks.layers import CNNEncoder
 
 
 class PolicyNet(nn.Module):
@@ -19,23 +19,24 @@ class PolicyNet(nn.Module):
         action_limits: torch.Tensor,
         num_fc_hidden_units: int = 256,
         num_channels: int = 64,
+        num_latent_dims: int = 64,
     ):
         super(PolicyNet, self).__init__()
 
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.action_limits = action_limits
 
-        self.encoder = CNNEncoder(width, height, num_frames, num_channels, num_fc_hidden_units)
-        self.fc_mean = nn.Linear(num_fc_hidden_units, num_fc_hidden_units)
+        self.encoder = CNNEncoder(width, height, num_frames, num_channels, num_latent_dims)
+        self.fc_mean = nn.Linear(num_latent_dims, num_fc_hidden_units)
         self.layer_norm = nn.LayerNorm(num_fc_hidden_units)
         self.mean_head = nn.Linear(num_fc_hidden_units, action_dim)
 
-        self.fc_log_std = nn.Linear(num_fc_hidden_units, num_fc_hidden_units)
+        self.fc_log_std = nn.Linear(num_latent_dims, num_fc_hidden_units)
         self.layer_norm2 = nn.LayerNorm(num_fc_hidden_units)
         self.log_std_head = nn.Linear(num_fc_hidden_units, action_dim)
 
-    def forward(self, x: torch.Tensor) -> Independent:
-        x = self.encoder(x)
+    def forward(self, x: torch.Tensor, detach_encoder: bool = False) -> Independent:
+        x = self.encoder(x, detach=detach_encoder)
 
         x_mean = F.silu(self.layer_norm(self.fc_mean(x)))
         mean = self.mean_head(x_mean)
@@ -52,8 +53,10 @@ class PolicyNet(nn.Module):
         u = self.action_limits * action
         return action.detach(), u.detach()
 
-    def evaluate(self, x: torch.Tensor, reparameterize: bool = True) -> Tuple[torch.Tensor, torch.Tensor, Independent]:
-        policy = self.forward(x)
+    def evaluate(
+        self, x: torch.Tensor, reparameterize: bool = True, detach_encoder: bool = False
+    ) -> Tuple[torch.Tensor, torch.Tensor, Independent]:
+        policy = self.forward(x, detach_encoder=detach_encoder)
         u = policy.rsample() if reparameterize else policy.sample()
         action = torch.tanh(u)
         log_prob = policy.log_prob(u) - torch.sum(torch.log(1 - action.pow(2) + 1e-6), dim=1)
@@ -70,19 +73,53 @@ class QNet(nn.Module):
         action_dim: int,
         num_fc_hidden_units: int = 256,
         num_channels: int = 64,
+        num_latent_dims: int = 64,
+        encoder: CNNEncoder = None,
     ):
         super(QNet, self).__init__()
 
-        self.encoder = CNNEncoder(width, height, num_frames, num_channels, num_fc_hidden_units)
-        self.fc_q_value = nn.Linear(num_fc_hidden_units + action_dim, num_fc_hidden_units)
+        if encoder is None:
+            self.encoder = CNNEncoder(width, height, num_frames, num_channels, num_latent_dims)
+        else:
+            self.encoder = encoder
+
+        self.fc_q_value = nn.Linear(num_latent_dims + action_dim, num_fc_hidden_units)
         self.layer_norm = nn.LayerNorm(num_fc_hidden_units)
         self.q_value_head = nn.Linear(num_fc_hidden_units, 1)
 
-    def forward(self, x: torch.Tensor, a: torch.Tensor) -> torch.Tensor:
-        x = self.encoder(x)
+    def forward(self, x: torch.Tensor, a: torch.Tensor, detach_encoder: bool = False) -> torch.Tensor:
+        x = self.encoder(x, detach=detach_encoder)
 
         x = torch.cat([x, a], dim=1)
         x = F.silu(self.layer_norm(self.fc_q_value(x)))
         x = self.q_value_head(x)
 
         return x
+
+
+class Curl(nn.Module):
+    def __init__(self, num_latent_dims: int, batch_size: int, q_net: QNet, target_q_net: QNet):
+        super(Curl, self).__init__()
+
+        self.batch_size = batch_size
+        self.encoder = q_net.encoder
+        self.encoder_target = target_q_net.encoder
+
+        self.W = nn.Parameter(torch.rand(num_latent_dims, num_latent_dims), requires_grad=True)
+
+    def encode(self, x: torch.Tensor, detach: bool = False, target: bool = False) -> torch.Tensor:
+        if target:
+            with torch.no_grad():
+                z = self.encoder_target(x)
+        else:
+            z = self.encoder(x)
+
+        if detach:
+            z = z.detach()
+
+        return z
+
+    def compute_logits(self, z_anchor: torch.Tensor, z_target: torch.Tensor) -> torch.Tensor:
+        Wz = torch.matmul(self.W, z_target.T)
+        logits = torch.matmul(z_anchor, Wz)
+        return logits - torch.max(logits, 1)[0][:, None]

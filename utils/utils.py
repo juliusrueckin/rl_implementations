@@ -11,6 +11,9 @@ from torchvision import transforms as T
 from networks.q_networks import DQN, DuelingDQN
 
 Transition = namedtuple("Transition", ("state", "action", "next_state", "reward", "done"))
+TransitionCurl = namedtuple(
+    "Transition", ("state", "state_anchor", "state_target", "action", "next_state", "reward", "done")
+)
 TransitionPPO = namedtuple(
     "TransitionPPO", ("state", "action", "policy", "reward", "done", "value", "advantage", "return_t")
 )
@@ -120,7 +123,8 @@ def explained_variance(values: torch.Tensor, value_targets: torch.Tensor) -> flo
 
 def clip_gradients(net: torch.nn.Module, clip_const: float):
     for param in net.parameters():
-        param.grad.data.clamp_(-clip_const, clip_const)
+        if param.grad is not None:
+            param.grad.data.clamp_(-clip_const, clip_const)
 
 
 def polyak_averaging(target_net: torch.nn.Module, net: torch.nn.Module, tau: float):
@@ -148,6 +152,16 @@ def normalize_values(values: torch.Tensor, shift_mean: bool = False) -> torch.Te
         return (values - values.mean()) / values.std().clamp(min=1e-8)
 
     return values / values.std().clamp(min=1e-8)
+
+
+def random_crop(x: torch.Tensor, crop_size: int) -> torch.Tensor:
+    transform = T.Compose([T.RandomCrop(crop_size, padding=None)])
+    return transform(x)
+
+
+def center_crop(x: torch.Tensor, crop_size: int) -> torch.Tensor:
+    transform = T.Compose([T.CenterCrop(crop_size)])
+    return transform(x)
 
 
 class ValueStats:

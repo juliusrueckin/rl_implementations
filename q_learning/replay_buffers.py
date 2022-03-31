@@ -79,6 +79,25 @@ class ExperienceReplay(ReplayBuffer):
         sample_transitions = [self.buffer[i] for i in sample_indices]
         return sample_transitions, sample_indices, np.ones(len(self.buffer))
 
+    def sample_curl(self, crop_size: int):
+        sample_indices = np.random.choice(len(self.buffer), size=self.batch_size)
+        sample_transitions = [self.buffer[i] for i in sample_indices]
+        for i, transition in enumerate(sample_transitions):
+            curl_transition = utils.TransitionCurl(
+                *(
+                    utils.random_crop(transition.state, crop_size),
+                    utils.random_crop(transition.state, crop_size),
+                    utils.random_crop(transition.state, crop_size),
+                    transition.action,
+                    utils.random_crop(transition.next_state, crop_size),
+                    transition.reward,
+                    transition.done,
+                )
+            )
+            sample_transitions[i] = curl_transition
+
+        return sample_transitions, sample_indices, np.ones(len(self.buffer))
+
 
 class PrioritizedExperienceReplay(ReplayBuffer):
     def __init__(
