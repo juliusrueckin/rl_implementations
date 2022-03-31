@@ -6,13 +6,17 @@ from torch import nn
 
 
 class CNNEncoder(nn.Module):
-    def __init__(self, num_frames: int, num_channels: int):
+    def __init__(self, width: int, height: int, num_frames: int, num_channels: int, num_fc_hidden_units: int):
         super(CNNEncoder, self).__init__()
 
         self.num_frames = num_frames
-        self.conv1 = nn.Conv2d(num_frames, int(num_channels / 2), kernel_size=(4, 4), stride=2)
+        self.conv1 = nn.Conv2d(num_frames, int(num_channels / 2), kernel_size=(4, 4), stride=4)
         self.conv2 = nn.Conv2d(int(num_channels / 2), num_channels, kernel_size=(4, 4), stride=2)
         self.conv3 = nn.Conv2d(num_channels, num_channels, kernel_size=(3, 3), stride=2)
+
+        self.flatten = nn.Flatten()
+        self.fc = nn.Linear(self.hidden_dimensions(width, height), num_fc_hidden_units)
+        self.layer_norm = nn.LayerNorm(num_fc_hidden_units)
 
     def hidden_dimensions(self, width: int = 84, height: int = 84) -> int:
         with torch.no_grad():
@@ -26,6 +30,9 @@ class CNNEncoder(nn.Module):
         x = F.silu(self.conv1(x))
         x = F.silu(self.conv2(x))
         x = F.silu(self.conv3(x))
+
+        x = self.flatten(x)
+        x = F.silu(self.layer_norm(self.fc(x)))
 
         return x
 

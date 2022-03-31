@@ -284,6 +284,7 @@ class DoubleDeepQLearningWrapper(DeepQLearningBaseWrapper):
             network_name,
             screen_width,
             screen_height,
+            const.FRAMES_STACKED,
             num_actions,
             const.NOISY_NETS,
             const.NOISY_SIGMA_INIT,

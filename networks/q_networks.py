@@ -25,18 +25,17 @@ class DQN(nn.Module):
         self.num_actions = num_actions
         self.num_atoms = num_atoms
 
-        self.encoder = CNNEncoder(num_frames, num_channels)
-        self.flatten = nn.Flatten()
-        self.fc = nn.Linear(self.encoder.hidden_dimensions(width, height), num_fc_hidden_units)
+        self.encoder = CNNEncoder(width, height, num_frames, num_channels, num_fc_hidden_units)
+        self.fc = nn.Linear(num_fc_hidden_units, num_fc_hidden_units)
         self.head = nn.Linear(num_fc_hidden_units, num_actions * num_atoms)
 
         if noisy_net:
-            self.fc = NoisyLinear(self.encoder.hidden_dimensions(width, height), num_fc_hidden_units, noisy_std_init)
+            self.fc = NoisyLinear(num_fc_hidden_units, num_fc_hidden_units, noisy_std_init)
             self.head = NoisyLinear(num_fc_hidden_units, num_actions * num_atoms, noisy_std_init)
 
     def forward(self, x):
         x = self.encoder(x)
-        x = F.silu(self.fc(self.flatten(x)))
+        x = F.silu(self.fc(x))
         x = self.head(x)
 
         if self.num_atoms == 1:
@@ -74,30 +73,24 @@ class DuelingDQN(nn.Module):
         self.num_actions = num_actions
         self.num_atoms = num_atoms
 
-        self.encoder = CNNEncoder(num_frames, num_channels)
-        self.flatten = nn.Flatten()
+        self.encoder = CNNEncoder(width, height, num_frames, num_channels, num_fc_hidden_units)
 
-        self.fc_advantages = nn.Linear(self.encoder.hidden_dimensions(width, height), num_fc_hidden_units)
+        self.fc_advantages = nn.Linear(num_fc_hidden_units, num_fc_hidden_units)
         self.head_advantages = nn.Linear(num_fc_hidden_units, num_actions * num_atoms)
 
         if noisy_net:
-            self.fc_advantages = NoisyLinear(
-                self.encoder.hidden_dimensions(width, height), num_fc_hidden_units, noisy_std_init
-            )
+            self.fc_advantages = NoisyLinear(num_fc_hidden_units, num_fc_hidden_units, noisy_std_init)
             self.head_advantages = NoisyLinear(num_fc_hidden_units, num_actions * num_atoms, noisy_std_init)
 
-        self.fc_value = nn.Linear(self.encoder.hidden_dimensions(width, height), num_fc_hidden_units)
+        self.fc_value = nn.Linear(num_fc_hidden_units, num_fc_hidden_units)
         self.head_value = nn.Linear(num_fc_hidden_units, num_atoms)
 
         if noisy_net:
-            self.fc_value = NoisyLinear(
-                self.encoder.hidden_dimensions(width, height), num_fc_hidden_units, noisy_std_init
-            )
+            self.fc_value = NoisyLinear(num_fc_hidden_units, num_fc_hidden_units, noisy_std_init)
             self.head_value = NoisyLinear(num_fc_hidden_units, num_atoms, noisy_std_init)
 
     def forward(self, x):
         x = self.encoder(x)
-        x = self.flatten(x)
 
         x_value = F.silu(self.fc_value(x))
         x_value = self.head_value(x_value)
