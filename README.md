@@ -14,4 +14,5 @@ This repository reimplements the most popular reinforcement learning algorithms 
 - Rainbow: Combining Improvements in Deep Reinforcement Learning ([Rainbow](https://arxiv.org/pdf/1710.02298v1.pdf))
 - Proximal Policy Optimization Algorithms ([PPO](https://arxiv.org/pdf/1707.06347v2.pdf))
 - Soft Actor-Critic ([SAC](https://arxiv.org/pdf/1801.01290.pdf))
+- Contrastive Unsupervised Representations for Reinforcement Learning ([CURL](https://arxiv.org/pdf/2004.04136v4.pdf))
 - Atari tricks: frame stacking, action repetitions, no-ops actions
