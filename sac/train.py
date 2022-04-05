@@ -72,9 +72,6 @@ for i in range(const.NUM_EPISODES):
         if steps_done >= const.MIN_START_STEPS and steps_done % const.OPTIMIZATION_UPDATE == 0:
             sac_wrapper.optimize_model(steps_done)
 
-        if steps_done % const.TARGET_UPDATE == 0:
-            sac_wrapper.update_target_networks()
-
         if done:
             sac_wrapper.episode_terminated(episode_return, steps_done)
             break

@@ -74,21 +74,21 @@ class QNet(nn.Module):
         num_fc_hidden_units: int = 256,
         num_channels: int = 64,
         num_latent_dims: int = 64,
-        encoder: CNNEncoder = None,
+        use_encoder: bool = False,
     ):
         super(QNet, self).__init__()
 
-        if encoder is None:
+        self.use_encoder = use_encoder
+        if use_encoder:
             self.encoder = CNNEncoder(width, height, num_frames, num_channels, num_latent_dims)
-        else:
-            self.encoder = encoder
 
         self.fc_q_value = nn.Linear(num_latent_dims + action_dim, num_fc_hidden_units)
         self.layer_norm = nn.LayerNorm(num_fc_hidden_units)
         self.q_value_head = nn.Linear(num_fc_hidden_units, 1)
 
     def forward(self, x: torch.Tensor, a: torch.Tensor, detach_encoder: bool = False) -> torch.Tensor:
-        x = self.encoder(x, detach=detach_encoder)
+        if self.use_encoder:
+            x = self.encoder(x, detach=detach_encoder)
 
         x = torch.cat([x, a], dim=1)
         x = F.silu(self.layer_norm(self.fc_q_value(x)))
@@ -97,13 +97,58 @@ class QNet(nn.Module):
         return x
 
 
+class Critic(nn.Module):
+    def __init__(
+        self,
+        width: int,
+        height: int,
+        num_frames: int,
+        action_dim: int,
+        num_fc_hidden_units: int = 256,
+        num_channels: int = 64,
+        num_latent_dims: int = 64,
+    ):
+        super(Critic, self).__init__()
+
+        self.encoder = CNNEncoder(width, height, num_frames, num_channels, num_latent_dims)
+        self.q_net1 = QNet(
+            width,
+            height,
+            num_frames,
+            action_dim,
+            num_fc_hidden_units=num_fc_hidden_units,
+            num_channels=num_channels,
+            num_latent_dims=num_latent_dims,
+            use_encoder=False,
+        )
+        self.q_net2 = QNet(
+            width,
+            height,
+            num_frames,
+            action_dim,
+            num_fc_hidden_units=num_fc_hidden_units,
+            num_channels=num_channels,
+            num_latent_dims=num_latent_dims,
+            use_encoder=False,
+        )
+
+    def forward(
+        self, x: torch.Tensor, a: torch.Tensor, detach_encoder: bool = False
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
+        x = self.encoder(x, detach=detach_encoder)
+        q1 = self.q_net1(x, a)
+        q2 = self.q_net2(x, a)
+
+        return q1, q2
+
+
 class Curl(nn.Module):
-    def __init__(self, num_latent_dims: int, batch_size: int, q_net: QNet, target_q_net: QNet):
+    def __init__(self, num_latent_dims: int, batch_size: int, critic: Critic, critic_target: Critic):
         super(Curl, self).__init__()
 
         self.batch_size = batch_size
-        self.encoder = q_net.encoder
-        self.encoder_target = target_q_net.encoder
+        self.encoder = critic.encoder
+        self.encoder_target = critic_target.encoder
 
         self.W = nn.Parameter(torch.rand(num_latent_dims, num_latent_dims), requires_grad=True)
 
