@@ -39,17 +39,6 @@ class SACWrapper:
             const.GAMMA,
         )
 
-        self.policy_net = PolicyNet(
-            width,
-            height,
-            const.FRAMES_STACKED,
-            num_actions,
-            action_limits,
-            num_fc_hidden_units=const.NUM_FC_HIDDEN_UNITS,
-            num_channels=const.NUM_CHANNELS,
-            num_latent_dims=const.NUM_LATENT_DIMS,
-        ).to(self.device)
-
         self.critic = Critic(
             width,
             height,
@@ -70,6 +59,18 @@ class SACWrapper:
         ).to(self.device)
         self.target_critic.load_state_dict(self.critic.state_dict())
         self.target_critic.eval()
+
+        self.policy_net = PolicyNet(
+            width,
+            height,
+            const.FRAMES_STACKED,
+            num_actions,
+            action_limits,
+            num_fc_hidden_units=const.NUM_FC_HIDDEN_UNITS,
+            num_channels=const.NUM_CHANNELS,
+            num_latent_dims=const.NUM_LATENT_DIMS,
+        ).to(self.device)
+        self.policy_net.encoder.load_state_dict(self.critic.encoder.state_dict())
 
         self.policy_optimizer = torch.optim.Adam(self.policy_net.parameters(), lr=const.POLICY_LEARNING_RATE)
         self.critic_optimizer = torch.optim.Adam(self.critic.parameters(), lr=const.Q_VALUE_LEARNING_RATE)
@@ -252,6 +253,22 @@ class SACWrapper:
 
         return policy_loss
 
+    def optimize_encoder(self, state_anchor_batch: torch.Tensor, state_target_batch: torch.Tensor):
+        z_anchor = self.curl.encode(state_anchor_batch)
+        z_target = self.curl.encode(state_target_batch, target=True)
+
+        logits = self.curl.compute_logits(z_anchor, z_target)
+        labels = torch.arange(logits.shape[0]).long().to(self.device)
+        xentropy_loss_fn = nn.CrossEntropyLoss(reduction="mean")
+        encoder_loss = xentropy_loss_fn(logits, labels)
+
+        self.encoder_optimizer.zero_grad()
+        self.curl_optimizer.zero_grad()
+        encoder_loss.backward()
+        clip_gradients(self.curl, const.CLIP_GRAD)
+        self.encoder_optimizer.step()
+        self.curl_optimizer.step()
+
     def optimize_model(self, steps_done: int):
         for _ in range(const.NUM_GRADIENT_STEPS):
             (
@@ -279,20 +296,7 @@ class SACWrapper:
             if steps_done % const.TARGET_UPDATE == 0:
                 self.update_target_networks()
 
-            z_anchor = self.curl.encode(state_anchor_batch)
-            z_target = self.curl.encode(state_target_batch, target=True)
-
-            logits = self.curl.compute_logits(z_anchor, z_target)
-            labels = torch.arange(logits.shape[0]).long().to(self.device)
-            xentropy_loss_fn = nn.CrossEntropyLoss(reduction="mean")
-            encoder_loss = xentropy_loss_fn(logits, labels)
-
-            self.encoder_optimizer.zero_grad()
-            self.curl_optimizer.zero_grad()
-            encoder_loss.backward()
-            clip_gradients(self.curl, const.CLIP_GRAD)
-            self.encoder_optimizer.step()
-            self.curl_optimizer.step()
+            self.optimize_encoder(state_anchor_batch, state_target_batch)
 
         if self.writer:
             self.track_tensorboard_metrics(

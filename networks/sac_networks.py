@@ -167,4 +167,4 @@ class Curl(nn.Module):
     def compute_logits(self, z_anchor: torch.Tensor, z_target: torch.Tensor) -> torch.Tensor:
         Wz = torch.matmul(self.W, z_target.T)
         logits = torch.matmul(z_anchor, Wz)
-        return logits - torch.max(logits, 1)[0][:, None]
+        return logits - torch.max(logits, dim=1)[0][:, None]
