@@ -111,9 +111,6 @@ class SACWrapper:
                 polyak_averaging(self.target_critic.q_net2, self.critic.q_net2, const.TAU)
                 polyak_averaging(self.target_critic.encoder, self.critic.encoder, const.TAU)
 
-            if const.USE_CURL:
-                self.policy_net.encoder.load_state_dict(self.critic.encoder.state_dict())
-
     @staticmethod
     def get_policy_loss(log_probs: torch.tensor, q_values: torch.tensor, ent_coeff: torch.tensor) -> torch.tensor:
         return (ent_coeff.detach() * log_probs - q_values).mean()
@@ -274,6 +271,8 @@ class SACWrapper:
         clip_gradients(self.curl, const.CLIP_GRAD)
         self.encoder_optimizer.step()
         self.curl_optimizer.step()
+
+        self.policy_net.encoder.load_state_dict(self.critic.encoder.state_dict())
 
     def optimize_model(self, steps_done: int):
         for _ in range(const.NUM_GRADIENT_STEPS):
