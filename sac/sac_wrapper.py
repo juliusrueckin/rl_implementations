@@ -70,7 +70,8 @@ class SACWrapper:
             num_channels=const.NUM_CHANNELS,
             num_latent_dims=const.NUM_LATENT_DIMS,
         ).to(self.device)
-        self.policy_net.encoder.load_state_dict(self.critic.encoder.state_dict())
+        if const.USE_CURL:
+            self.policy_net.encoder.load_state_dict(self.critic.encoder.state_dict())
 
         self.policy_optimizer = torch.optim.Adam(self.policy_net.parameters(), lr=const.POLICY_LEARNING_RATE)
         self.critic_optimizer = torch.optim.Adam(self.critic.parameters(), lr=const.Q_VALUE_LEARNING_RATE)
@@ -84,9 +85,10 @@ class SACWrapper:
         self.entropy_coeff_optimizer = torch.optim.Adam([self.log_entropy_coeff], lr=const.ENTROPY_LEARNING_RATE)
         self.target_entropy = -float(num_actions)
 
-        self.curl = Curl(const.NUM_LATENT_DIMS, const.BATCH_SIZE, self.critic, self.target_critic)
-        self.encoder_optimizer = torch.optim.Adam(self.critic.encoder.parameters(), lr=const.ENCODER_LEARNING_RATE)
-        self.curl_optimizer = torch.optim.Adam(self.curl.parameters(), lr=const.ENCODER_LEARNING_RATE)
+        if const.USE_CURL:
+            self.curl = Curl(const.NUM_LATENT_DIMS, self.critic, self.target_critic)
+            self.encoder_optimizer = torch.optim.Adam(self.critic.encoder.parameters(), lr=const.ENCODER_LEARNING_RATE)
+            self.curl_optimizer = torch.optim.Adam([self.curl.W], lr=const.ENCODER_LEARNING_RATE)
 
     def episode_terminated(self, episode_return: float, steps_done: int):
         self.writer.add_scalar("Episode/Return", episode_return, steps_done)
@@ -103,10 +105,14 @@ class SACWrapper:
             if const.TARGET_UPDATE > 1:
                 self.target_critic.q_net1.load_state_dict(self.critic.q_net1.state_dict())
                 self.target_critic.q_net2.load_state_dict(self.critic.q_net2.state_dict())
+                self.target_critic.encoder.load_state_dict(self.critic.encoder.state_dict())
             else:
                 polyak_averaging(self.target_critic.q_net1, self.critic.q_net1, const.TAU)
                 polyak_averaging(self.target_critic.q_net2, self.critic.q_net2, const.TAU)
                 polyak_averaging(self.target_critic.encoder, self.critic.encoder, const.TAU)
+
+            if const.USE_CURL:
+                self.policy_net.encoder.load_state_dict(self.critic.encoder.state_dict())
 
     @staticmethod
     def get_policy_loss(log_probs: torch.tensor, q_values: torch.tensor, ent_coeff: torch.tensor) -> torch.tensor:
@@ -241,7 +247,7 @@ class SACWrapper:
         log_prob_batch: torch.Tensor,
         entropy_coeff: torch.Tensor,
     ) -> torch.Tensor:
-        new_q1_values, new_q2_values = self.critic(state_batch, new_action_batch, detach_encoder=True)
+        new_q1_values, new_q2_values = self.critic(state_batch, new_action_batch, detach_encoder=const.USE_CURL)
         new_q1_values, new_q2_values = new_q1_values.squeeze(), new_q2_values.squeeze()
         new_q_values = torch.min(new_q1_values, new_q2_values)
         policy_loss = self.get_policy_loss(log_prob_batch.float(), new_q_values.float(), entropy_coeff)
@@ -282,7 +288,7 @@ class SACWrapper:
             ) = self.prepare_batch_data_curl()
 
             new_action_batch, log_prob_batch, new_policy = self.policy_net.evaluate(
-                state_batch, reparameterize=True, detach_encoder=True
+                state_batch, reparameterize=True, detach_encoder=const.USE_CURL
             )
 
             entropy_coeff, entropy_coeff_loss = self.optimize_entropy_coeff(log_prob_batch)
@@ -296,7 +302,8 @@ class SACWrapper:
             if steps_done % const.TARGET_UPDATE == 0:
                 self.update_target_networks()
 
-            self.optimize_encoder(state_anchor_batch, state_target_batch)
+            if const.USE_CURL:
+                self.optimize_encoder(state_anchor_batch, state_target_batch)
 
         if self.writer:
             self.track_tensorboard_metrics(

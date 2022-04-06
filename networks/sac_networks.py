@@ -143,10 +143,9 @@ class Critic(nn.Module):
 
 
 class Curl(nn.Module):
-    def __init__(self, num_latent_dims: int, batch_size: int, critic: Critic, critic_target: Critic):
+    def __init__(self, num_latent_dims: int, critic: Critic, critic_target: Critic):
         super(Curl, self).__init__()
 
-        self.batch_size = batch_size
         self.encoder = critic.encoder
         self.encoder_target = critic_target.encoder
 
