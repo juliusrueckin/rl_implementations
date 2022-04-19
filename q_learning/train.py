@@ -25,7 +25,7 @@ deep_q_learning_wrapper = get_q_learning_wrapper(
     const.DOUBLE_Q_LEARNING, screen_width, screen_height, num_actions, const.NETWORK_NAME, writer
 )
 
-for i in range(const.NUM_EPISODES):
+for episode in range(const.NUM_EPISODES):
     env.reset()
     observation = utils.get_cartpole_screen(env, const.INPUT_SIZE)
     state = deque([torch.zeros(observation.size()) for _ in range(const.FRAMES_STACKED)], maxlen=const.FRAMES_STACKED)
@@ -69,6 +69,7 @@ for i in range(const.NUM_EPISODES):
             const.NUM_ATOMS,
             const.V_MIN,
             const.V_MAX,
+            eval_mode=False,
         )
         _, reward, done, _ = env.step(action.item())
         episode_return += reward
@@ -87,6 +88,9 @@ for i in range(const.NUM_EPISODES):
         if steps_done % const.TARGET_UPDATE == 0:
             print(f"UPDATE TARGET NETWORK after {steps_done} STEPS")
             deep_q_learning_wrapper.update_target_network()
+
+        if steps_done % const.EVAL_FREQUENCY == 0 and episode > 0:
+            deep_q_learning_wrapper.eval_policy(steps_done)
 
         if done:
             deep_q_learning_wrapper.episode_terminated(episode_return, steps_done)

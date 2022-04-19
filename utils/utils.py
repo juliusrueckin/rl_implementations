@@ -96,9 +96,10 @@ def select_action(
     num_atoms: int,
     v_min: float,
     v_max: float,
+    eval_mode: bool = False,
 ):
     eps_threshold = schedule_epsilon(steps_done, noisy_net, eps_start, eps_end, eps_decay)
-    if random.random() > eps_threshold and steps_done > min_start_steps:
+    if (random.random() > eps_threshold and steps_done > min_start_steps) or eval_mode:
         with torch.no_grad():
             if num_atoms == 1:
                 return policy_net(state.to(device)).max(1)[1].view(1, 1)

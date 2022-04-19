@@ -1,7 +1,10 @@
 import os
+import random
 from collections import deque
+from itertools import count
 from typing import Tuple
 
+import gym
 import numpy as np
 import torch
 from torch import nn
@@ -63,7 +66,7 @@ class DeepQLearningBaseWrapper:
         self.max_mean_episode_return = -np.inf
 
     def episode_terminated(self, episode_return: float, steps_done: int):
-        self.writer.add_scalar("Episode/Return", episode_return, steps_done)
+        self.writer.add_scalar("Training/EpisodeReturn", episode_return, steps_done)
         self.episode_returns.append(episode_return)
         running_mean_return = sum(self.episode_returns) / len(self.episode_returns)
         if len(self.episode_returns) >= const.EPISODES_PATIENCE and running_mean_return > self.max_mean_episode_return:
@@ -243,6 +246,73 @@ class DeepQLearningBaseWrapper:
             for tag, params in self.policy_net.named_parameters():
                 if params.grad is not None:
                     self.writer.add_histogram(f"Parameters/{tag}", params.data.cpu().numpy(), steps_done)
+
+    def eval_policy(self, steps_done: int):
+        env = gym.make(const.ENV_NAME)
+        env.reset()
+
+        episode_returns = np.zeros(const.EVAL_EPISODE_COUNT)
+        for episode in range(const.EVAL_EPISODE_COUNT):
+            env.reset()
+            observation = utils.get_cartpole_screen(env, const.INPUT_SIZE)
+            state = deque(
+                [torch.zeros(observation.size()) for _ in range(const.FRAMES_STACKED)], maxlen=const.FRAMES_STACKED
+            )
+            state.append(observation)
+            state_tensor = torch.stack(tuple(state), dim=1)
+
+            episode_return = 0
+            no_op_steps = random.randint(0, const.NO_OP_MAX_STEPS)
+            for step in count():
+                if step < no_op_steps:
+                    action = torch.tensor([[random.randrange(self.num_actions)]], device=self.device, dtype=torch.long)
+                    _, _, done, _ = env.step(action.item())
+                    if done:
+                        break
+
+                    continue
+
+                if step % const.ACTION_REPETITIONS != 0:
+                    _, _, done, _ = env.step(action.item())
+                    if done:
+                        break
+
+                    continue
+
+                action = utils.select_action(
+                    state_tensor,
+                    steps_done,
+                    self.num_actions,
+                    self.policy_net,
+                    self.device,
+                    const.NOISY_NETS,
+                    const.EPS_START,
+                    const.EPS_END,
+                    const.EPS_DECAY,
+                    const.MIN_START_STEPS,
+                    const.NUM_ATOMS,
+                    const.V_MIN,
+                    const.V_MAX,
+                    eval_mode=True,
+                )
+                _, reward, done, _ = env.step(action.item())
+                episode_return += reward
+
+                next_observation = utils.get_cartpole_screen(env, const.INPUT_SIZE)
+                next_state = state.copy()
+                next_state.append(next_observation)
+                next_state_tensor = torch.stack(tuple(next_state), dim=1)
+
+                if done:
+                    episode_returns[episode] = episode_return
+                    break
+
+                state_tensor = next_state_tensor
+                state = next_state.copy()
+
+        self.writer.add_scalar("Eval/EpisodeReturn", np.mean(episode_returns), steps_done)
+        env.render()
+        env.close()
 
 
 class DeepQLearningWrapper(DeepQLearningBaseWrapper):
