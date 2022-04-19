@@ -23,7 +23,7 @@ num_actions = env.action_space.n
 ppo_wrapper = PPOWrapper(screen_width, screen_height, num_actions, writer)
 steps_done = 0
 
-for i in range(const.NUM_EPISODES):
+for episode in range(const.NUM_EPISODES):
     env.reset()
     observation = utils.get_cartpole_screen(env, const.INPUT_SIZE)
     state = deque([torch.zeros(observation.size()) for _ in range(const.FRAMES_STACKED)], maxlen=const.FRAMES_STACKED)
@@ -32,8 +32,8 @@ for i in range(const.NUM_EPISODES):
 
     episode_return = 0
     no_op_steps = random.randint(0, const.NO_OP_MAX_STEPS)
-    for t in count():
-        if t < no_op_steps:
+    for step in count():
+        if step < no_op_steps:
             action = torch.tensor([[random.randrange(num_actions)]], device=device, dtype=torch.long)
             _, _, done, _ = env.step(action.item())
             if done:
@@ -41,9 +41,10 @@ for i in range(const.NUM_EPISODES):
 
             continue
 
-        if t % const.ACTION_REPETITIONS != 0:
+        if step % const.ACTION_REPETITIONS != 0:
             _, _, done, _ = env.step(action.item())
             if done:
+                ppo_wrapper.episode_terminated(episode_return, steps_done)
                 break
 
             continue
@@ -69,6 +70,9 @@ for i in range(const.NUM_EPISODES):
             ppo_wrapper.optimize_model(steps_done)
             ppo_wrapper.update_old_networks()
             ppo_wrapper.batch_memory.clear()
+
+        if steps_done % const.EVAL_FREQUENCY == 0 and episode > 0:
+            ppo_wrapper.eval_policy(steps_done)
 
         if done:
             ppo_wrapper.episode_terminated(episode_return, steps_done)
