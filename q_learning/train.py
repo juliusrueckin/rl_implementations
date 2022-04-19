@@ -46,6 +46,7 @@ for episode in range(const.NUM_EPISODES):
         if t % const.ACTION_REPETITIONS != 0:
             _, _, done, _ = env.step(action.item())
             if done:
+                deep_q_learning_wrapper.episode_terminated(episode_return, steps_done)
                 break
 
             continue

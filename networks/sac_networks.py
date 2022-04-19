@@ -47,9 +47,11 @@ class PolicyNet(nn.Module):
 
         return Independent(Normal(loc=mean, scale=std), reinterpreted_batch_ndims=1)
 
-    def get_action(self, x: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
+    def get_action(self, x: torch.Tensor, eval_mode: bool = False) -> Tuple[torch.Tensor, torch.Tensor]:
         policy = self.forward(x)
         action = torch.tanh(policy.sample())
+        if eval_mode:
+            action = torch.tanh(policy.mean)
         u = self.action_limits * action
         return action.detach(), u.detach()
 

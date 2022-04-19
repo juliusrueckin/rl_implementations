@@ -23,7 +23,7 @@ action_limits = torch.from_numpy(env.action_space.high).to(device=device)
 steps_done = 0
 sac_wrapper = SACWrapper(screen_width, screen_height, action_dim, action_limits, writer=writer)
 
-for i in range(const.NUM_EPISODES):
+for episode in range(const.NUM_EPISODES):
     env.reset()
     observation = utils.get_pendulum_screen(env, const.IMAGE_SIZE)
     state = deque([torch.zeros(observation.size()) for _ in range(const.FRAMES_STACKED)], maxlen=const.FRAMES_STACKED)
@@ -32,15 +32,15 @@ for i in range(const.NUM_EPISODES):
 
     episode_return = 0
     no_op_steps = random.randint(0, const.NO_OP_MAX_STEPS)
-    for t in count():
-        if t < no_op_steps:
+    for step in count():
+        if step < no_op_steps:
             _, _, done, _ = env.step(env.action_space.sample())
             if done:
                 break
 
             continue
 
-        if t % const.ACTION_REPETITIONS != 0:
+        if step % const.ACTION_REPETITIONS != 0:
             _, reward, done, _ = env.step(u.cpu().numpy())
             episode_return += reward
             if done:
@@ -53,7 +53,9 @@ for i in range(const.NUM_EPISODES):
             u = torch.from_numpy(env.action_space.sample()).to(device)
             action = torch.tanh(u)
         else:
-            action, u = sac_wrapper.policy_net.get_action(utils.center_crop(state_tensor.to(device), const.INPUT_SIZE))
+            action, u = sac_wrapper.policy_net.get_action(
+                utils.center_crop(state_tensor.to(device), const.INPUT_SIZE), eval_mode=False
+            )
             action, u = action.squeeze(1), u.squeeze(1)
 
         _, reward, done, _ = env.step(u.cpu().numpy())
@@ -71,6 +73,9 @@ for i in range(const.NUM_EPISODES):
 
         if steps_done >= const.MIN_START_STEPS and steps_done % const.OPTIMIZATION_UPDATE == 0:
             sac_wrapper.optimize_model(steps_done)
+
+        if steps_done % const.EVAL_FREQUENCY == 0 and episode > 0:
+            sac_wrapper.eval_policy(steps_done)
 
         if done:
             sac_wrapper.episode_terminated(episode_return, steps_done)

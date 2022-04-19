@@ -248,6 +248,7 @@ class DeepQLearningBaseWrapper:
                     self.writer.add_histogram(f"Parameters/{tag}", params.data.cpu().numpy(), steps_done)
 
     def eval_policy(self, steps_done: int):
+        print(f"EVALUATE Q-LEARNING POLICY AFTER {steps_done} STEPS")
         env = gym.make(const.ENV_NAME)
         env.reset()
 

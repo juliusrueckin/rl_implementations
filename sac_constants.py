@@ -10,6 +10,8 @@ NUM_EPISODES = int(1e6)
 # Logging
 LOG_DIR = "logs"
 EPISODES_PATIENCE = 128
+EVAL_FREQUENCY = 5000
+EVAL_EPISODE_COUNT = 10
 
 # Training hyperparams
 N_STEP_RETURNS = 1

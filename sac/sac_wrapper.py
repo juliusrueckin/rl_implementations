@@ -1,7 +1,10 @@
 import os
+import random
 from collections import deque
+from itertools import count
 from typing import Tuple
 
+import gym
 import numpy as np
 import torch
 from torch import nn
@@ -11,6 +14,7 @@ from torch.utils.tensorboard import SummaryWriter
 import sac_constants as const
 from networks.sac_networks import PolicyNet, Critic, Curl
 from q_learning.replay_buffers import ExperienceReplay
+from utils import utils
 from utils.utils import (
     explained_variance,
     Transition,
@@ -91,7 +95,7 @@ class SACWrapper:
             self.curl_optimizer = torch.optim.Adam([self.curl.W], lr=const.ENCODER_LEARNING_RATE)
 
     def episode_terminated(self, episode_return: float, steps_done: int):
-        self.writer.add_scalar("Episode/Return", episode_return, steps_done)
+        self.writer.add_scalar("EpisodeReturn/Training", episode_return, steps_done)
         self.episode_returns.append(episode_return)
         running_mean_return = sum(self.episode_returns) / len(self.episode_returns)
 
@@ -348,3 +352,65 @@ class SACWrapper:
         if steps_done % 500 == 0:
             log_network_params(self.policy_net, self.writer, steps_done, "Policy-Net")
             log_network_params(self.critic, self.writer, steps_done, "Critic-Net")
+
+    def eval_policy(self, steps_done: int):
+        print(f"EVALUATE SAC POLICY AFTER {steps_done} STEPS")
+        env = gym.make(const.ENV_NAME)
+        env.reset()
+
+        episode_returns = np.zeros(const.EVAL_EPISODE_COUNT)
+        for episode in range(const.EVAL_EPISODE_COUNT):
+            env.reset()
+            observation = utils.get_pendulum_screen(env, const.IMAGE_SIZE)
+            state = deque(
+                [torch.zeros(observation.size()) for _ in range(const.FRAMES_STACKED)], maxlen=const.FRAMES_STACKED
+            )
+            state.append(observation)
+            state_tensor = torch.stack(tuple(state), dim=1)
+
+            episode_return = 0
+            no_op_steps = random.randint(0, const.NO_OP_MAX_STEPS)
+            for t in count():
+                if t < no_op_steps:
+                    _, _, done, _ = env.step(env.action_space.sample())
+                    if done:
+                        break
+
+                    continue
+
+                if t % const.ACTION_REPETITIONS != 0:
+                    _, reward, done, _ = env.step(u.cpu().numpy())
+                    episode_return += reward
+                    if done:
+                        episode_returns[episode] = episode_return
+                        break
+
+                    continue
+
+                if steps_done < const.MIN_START_STEPS:
+                    u = torch.from_numpy(env.action_space.sample()).to(self.device)
+                else:
+                    _, u = self.policy_net.get_action(
+                        utils.center_crop(state_tensor.to(self.device), const.INPUT_SIZE), eval_mode=True
+                    )
+                    u = u.squeeze(1)
+
+                _, reward, done, _ = env.step(u.cpu().numpy())
+                env.render(mode="rgb_array")
+                episode_return += reward
+
+                next_observation = utils.get_pendulum_screen(env, const.IMAGE_SIZE)
+                next_state = state.copy()
+                next_state.append(next_observation)
+                next_state_tensor = torch.stack(tuple(next_state), dim=1)
+
+                if done:
+                    episode_returns[episode] = episode_return
+                    break
+
+                state_tensor = next_state_tensor
+                state = next_state.copy()
+
+        self.writer.add_scalar("EpisodeReturn/Eval", np.mean(episode_returns), steps_done)
+        env.render()
+        env.close()
