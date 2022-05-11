@@ -85,7 +85,11 @@ class DeepQLearningBaseWrapper:
         return loss
 
     def update_target_network(self):
-        self.target_net.load_state_dict(self.policy_net.state_dict())
+        with torch.no_grad():
+            if const.TARGET_UPDATE > 1:
+                self.target_net.load_state_dict(self.policy_net.state_dict())
+            else:
+                utils.polyak_averaging(self.target_net, self.policy_net, const.TAU)
 
     def update_policy_net_eval(self):
         pass
@@ -199,6 +203,9 @@ class DeepQLearningBaseWrapper:
         estimated_q_values = self.get_q_value_estimate(state_batch, action_batch)
         td_targets, next_state_action_values = self.get_td_targets(reward_batch, next_state_batch, done_batch)
         weighted_loss = self.optimization_step(estimated_q_values, td_targets, weights, indices)
+
+        if steps_done % const.TARGET_UPDATE == 0:
+            self.update_target_network()
 
         if self.writer:
             self.track_tensorboard_metrics(

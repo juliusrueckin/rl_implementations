@@ -86,10 +86,6 @@ for episode in range(const.NUM_EPISODES):
         deep_q_learning_wrapper.replay_buffer.push(state_tensor, action, next_state_tensor, reward, done_tensor)
         deep_q_learning_wrapper.optimize_model(steps_done)
 
-        if steps_done % const.TARGET_UPDATE == 0:
-            print(f"UPDATE TARGET NETWORK after {steps_done} STEPS")
-            deep_q_learning_wrapper.update_target_network()
-
         if steps_done % const.EVAL_FREQUENCY == 0 and episode > 0:
             deep_q_learning_wrapper.eval_policy(steps_done)
 
