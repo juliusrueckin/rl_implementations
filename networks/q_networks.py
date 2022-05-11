@@ -39,7 +39,7 @@ class DQN(nn.Module):
         x = self.head(x)
 
         if self.num_atoms == 1:
-            return F.softplus(x)
+            return x
 
         x = x.view(x.size(0), self.num_actions, self.num_atoms)
         return F.softmax(x, dim=2)
@@ -99,7 +99,7 @@ class DuelingDQN(nn.Module):
         x_advantages = self.head_advantages(x_advantages)
 
         if self.num_atoms == 1:
-            return F.softplus(x_value) + x_advantages - x_advantages.mean()
+            return x_value + x_advantages - x_advantages.mean()
 
         x_value = x_value.view(x_value.size(0), 1, self.num_atoms)
         x_advantages = x_advantages.view(x_advantages.size(0), self.num_actions, self.num_atoms)
