@@ -137,7 +137,7 @@ class PPOWrapper:
         last_done = torch.tensor([int(self.batch_memory.transitions[-1].done)])
         last_value = torch.tensor([0])
 
-        if not last_value:
+        if not last_done:
             last_state = self.batch_memory.transitions[-1].state
             last_value = self.value_net_old(last_state)
 
