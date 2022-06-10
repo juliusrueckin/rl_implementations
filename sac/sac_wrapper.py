@@ -315,7 +315,7 @@ class SACWrapper:
                 q_value_loss,
                 q1_values,
                 target_q_values,
-                explained_variance(q1_values, target_q_values),
+                explained_variance(target_q_values, q1_values),
                 new_policy,
                 entropy_coeff.item(),
                 entropy_coeff_loss,

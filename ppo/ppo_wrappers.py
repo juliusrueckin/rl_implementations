@@ -23,7 +23,7 @@ class PPOWrapper:
         self.num_actions = num_actions
         self.writer = writer
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        self.batch_memory = BatchMemory(const.BATCH_SIZE)
+        self.batch_memory = BatchMemory(const.BATCH_SIZE, const.NUM_ENVS)
 
         self.policy_net = PolicyNet(
             width,
@@ -43,6 +43,7 @@ class PPOWrapper:
         ).to(self.device)
         self.policy_net_old.load_state_dict(self.policy_net.state_dict())
         self.policy_net_old.eval()
+        self.policy_net_old.share_memory()
 
         self.value_net = ValueNet(
             width,
@@ -62,6 +63,7 @@ class PPOWrapper:
         ).to(self.device)
         self.value_net_old.load_state_dict(self.value_net.state_dict())
         self.value_net_old.eval()
+        self.value_net_old.share_memory()
 
         self.policy_optimizer = torch.optim.Adam(self.policy_net.parameters(), lr=const.POLICY_LEARNING_RATE)
         self.policy_scheduler = torch.optim.lr_scheduler.LinearLR(self.policy_optimizer, 1.0, 0.1, const.NUM_EPISODES)
@@ -71,8 +73,8 @@ class PPOWrapper:
         self.episode_returns = deque([], maxlen=const.EPISODES_PATIENCE)
         self.max_mean_episode_return = -np.inf
 
-    def episode_terminated(self, episode_return: float, steps_done: int):
-        self.writer.add_scalar("Training/EpisodeReturn", episode_return, steps_done)
+    def episode_terminated(self, episode_return: float, episodes_done: int):
+        self.writer.add_scalar("Training/EpisodeReturn", episode_return, episodes_done)
         self.episode_returns.append(episode_return)
         running_mean_return = sum(self.episode_returns) / len(self.episode_returns)
         if len(self.episode_returns) >= const.EPISODES_PATIENCE and running_mean_return > self.max_mean_episode_return:
@@ -134,19 +136,18 @@ class PPOWrapper:
         return state_batch, action_batch, policy_batch, reward_batch, value_batch, advantage_batch, return_batch
 
     def compute_last_step_info(self) -> Tuple[torch.Tensor, torch.Tensor]:
-        last_done = torch.tensor([int(self.batch_memory.transitions[-1].done)])
-        last_value = torch.tensor([0])
+        last_states = torch.cat([self.batch_memory.transitions[env_id][-1].state for env_id in range(const.NUM_ENVS)])
+        last_values = self.value_net_old(last_states)
+        last_dones = torch.tensor(
+            [int(self.batch_memory.transitions[env_id][-1].done) for env_id in range(const.NUM_ENVS)]
+        )
 
-        if not last_done:
-            last_state = self.batch_memory.transitions[-1].state
-            last_value = self.value_net_old(last_state)
-
-        return last_value.squeeze(), last_done.squeeze()
+        return last_values, last_dones
 
     def optimize_model(self, steps_done: int):
         clip_epsilon = schedule_clip_epsilon(const.CLIP_EPSILON, steps_done, const.NUM_EPISODES)
-        last_value, last_done = self.compute_last_step_info()
-        batches = self.batch_memory.get(last_value, last_done)
+        last_values, last_dones = self.compute_last_step_info()
+        batches = self.batch_memory.get(last_values, last_dones)
 
         for _ in range(const.NUM_EPOCHS):
             for batch in batches:
@@ -196,7 +197,7 @@ class PPOWrapper:
                 advantage_batch,
                 policy_batch.entropy().mean(),
                 self.policy_scheduler.get_last_lr()[0],
-                explained_variance(value_batch, value_target_batch),
+                explained_variance(value_target_batch, value_batch),
                 clip_epsilon,
             )
 
@@ -210,13 +211,13 @@ class PPOWrapper:
         estimated_advantages: torch.tensor,
         entropy: float,
         learning_rate: float,
-        explained_variance: float,
+        explained_var: float,
         clip_epsilon: float,
     ):
         self.writer.add_scalar("Hyperparam/Epsilon", clip_epsilon, steps_done)
         self.writer.add_scalar("Hyperparam/Learning-Rate", learning_rate, steps_done)
 
-        self.writer.add_scalar("Training/Explained-Variance", explained_variance, steps_done)
+        self.writer.add_scalar("Training/Explained-Variance", explained_var, steps_done)
         self.writer.add_scalar("Training/Policy-Entropy", entropy, steps_done)
         self.writer.add_scalar("Training/Policy-Loss", policy_loss, steps_done)
         self.writer.add_scalar("Training/Value-Loss", value_loss, steps_done)

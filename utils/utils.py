@@ -35,12 +35,10 @@ def get_cartpole_screen(env, input_size: int) -> torch.Tensor:
         ]
     )
     screen = env.render(mode="rgb_array").transpose((2, 0, 1))
-
     _, screen_height, screen_width = screen.shape
     screen = screen[:, int(screen_height * 0.4) : int(screen_height * 0.8)]
     view_width = int(screen_width * 0.6)
     cart_location = get_cart_location(env, screen_width)
-
     slice_range = slice(cart_location - view_width // 2, cart_location + view_width // 2)
     if cart_location < view_width // 2:
         slice_range = slice(view_width)
@@ -48,7 +46,6 @@ def get_cartpole_screen(env, input_size: int) -> torch.Tensor:
         slice_range = slice(-view_width, None)
 
     screen = screen[:, :, slice_range]
-
     screen = np.ascontiguousarray(screen, dtype=np.float32) / 255
     screen = torch.from_numpy(screen)
 
@@ -118,8 +115,8 @@ def schedule_clip_epsilon(base_epsilon: float, steps_done: int, total_steps: int
     return np.maximum(1.0 - (steps_done / total_steps), 0.1) * base_epsilon
 
 
-def explained_variance(values: torch.Tensor, value_targets: torch.Tensor) -> float:
-    return 1 - (value_targets - values).var() / value_targets.var()
+def explained_variance(empirical_returns: torch.Tensor, predicted_values: torch.Tensor) -> float:
+    return 1 - (empirical_returns - predicted_values).var() / empirical_returns.var()
 
 
 def clip_gradients(net: torch.nn.Module, clip_const: float):
