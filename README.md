@@ -12,7 +12,7 @@ This repository reimplements the most popular reinforcement learning algorithms 
 - Noisy networks for exploration ([Noisy Nets](https://arxiv.org/pdf/1706.10295v3.pdf))
 - Distributional Perspective on Reinforcement Learning ([C51](http://proceedings.mlr.press/v70/bellemare17a/bellemare17a.pdf))
 - Rainbow: Combining Improvements in Deep Reinforcement Learning ([Rainbow](https://arxiv.org/pdf/1710.02298v1.pdf))
-- Proximal Policy Optimization Algorithms ([PPO](https://arxiv.org/pdf/1707.06347v2.pdf))
+- Proximal Policy Optimization Algorithms (parallelized) ([PPO](https://arxiv.org/pdf/1707.06347v2.pdf))
 - Soft Actor-Critic ([SAC](https://arxiv.org/pdf/1801.01290.pdf))
 - Contrastive Unsupervised Representations for Reinforcement Learning ([CURL](https://arxiv.org/pdf/2004.04136v4.pdf))
 - Atari tricks: frame stacking, action repetitions, no-ops actions
