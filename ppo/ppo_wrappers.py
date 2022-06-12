@@ -145,11 +145,11 @@ class PPOWrapper:
         return last_values, last_dones
 
     def optimize_model(self, steps_done: int):
-        clip_epsilon = schedule_clip_epsilon(const.CLIP_EPSILON, steps_done, const.NUM_EPISODES)
-        last_values, last_dones = self.compute_last_step_info()
-        batches = self.batch_memory.get(last_values, last_dones)
-
         for _ in range(const.NUM_EPOCHS):
+            clip_epsilon = schedule_clip_epsilon(const.CLIP_EPSILON, steps_done, const.NUM_EPISODES)
+            last_values, last_dones = self.compute_last_step_info()
+            batches = self.batch_memory.get(last_values, last_dones)
+
             for batch in batches:
                 (
                     state_batch,
