@@ -1,3 +1,4 @@
+import copy
 import random
 from collections import deque
 from itertools import count
@@ -116,8 +117,7 @@ def main():
 
     ppo_wrapper = PPOWrapper(screen_width, screen_height, num_actions, writer)
 
-    manager = mp.Manager()
-    batch_memory_queue = manager.Queue()
+    batch_memory_queue = mp.Queue()
     trainer_events = [mp.Event() for _ in range(const.NUM_ENVS)]
     eval_events = [mp.Event() for _ in range(const.NUM_ENVS)]
     actor_processes = []
@@ -148,13 +148,22 @@ def main():
     while finished_episodes < const.NUM_EPISODES:
         rollout_data = batch_memory_queue.get(block=True)
         state, action, policy, reward, done, value = rollout_data["transition"]
-        ppo_wrapper.batch_memory.add(rollout_data["env_id"], state, action, policy, reward, done, value)
+        env_id = rollout_data["env_id"]
+        ppo_wrapper.batch_memory.add(
+            copy.deepcopy(env_id),
+            copy.deepcopy(state),
+            copy.deepcopy(action),
+            copy.deepcopy(policy),
+            copy.deepcopy(reward),
+            copy.deepcopy(done),
+            copy.deepcopy(value),
+        )
 
         if done:
             finished_episodes += 1
             ppo_wrapper.episode_terminated(rollout_data["return"], total_steps_done)
 
-        del rollout_data, state, action, policy, reward, done, value
+        del rollout_data, state, action, policy, reward, done, value, env_id
         total_steps_done += 1
 
         if len(ppo_wrapper.batch_memory) % (const.HORIZON * const.NUM_ENVS) == 0 and len(ppo_wrapper.batch_memory) > 0:
