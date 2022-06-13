@@ -76,6 +76,7 @@ class SACWrapper:
         ).to(self.device)
         if const.USE_CURL:
             self.policy_net.encoder.load_state_dict(self.critic.encoder.state_dict())
+        self.policy_net.share_memory()
 
         self.policy_optimizer = torch.optim.Adam(self.policy_net.parameters(), lr=const.POLICY_LEARNING_RATE)
         self.critic_optimizer = torch.optim.Adam(self.critic.parameters(), lr=const.Q_VALUE_LEARNING_RATE)
@@ -396,7 +397,6 @@ class SACWrapper:
                     u = u.squeeze(1)
 
                 _, reward, done, _ = env.step(u.cpu().numpy())
-                env.render(mode="rgb_array")
                 episode_return += reward
 
                 next_observation = utils.get_pendulum_screen(env, const.IMAGE_SIZE)
