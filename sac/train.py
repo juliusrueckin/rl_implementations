@@ -1,3 +1,4 @@
+import copy
 import random
 from collections import deque
 from itertools import count
@@ -56,20 +57,12 @@ def collect_rollouts(
             if step % const.ACTION_REPETITIONS != 0:
                 _, reward, done, _ = env.step(u.cpu().numpy())
                 episode_return += reward
-                reward = torch.tensor([reward], device=device)
 
                 if done:
-                    action = torch.tanh(u)
-                    done_tensor = torch.tensor([int(done)], dtype=torch.int32, device=device)
-                    next_observation = utils.get_pendulum_screen(env, const.IMAGE_SIZE)
-                    next_state = state.copy()
-                    next_state.append(next_observation)
-                    next_state_tensor = torch.stack(tuple(next_state), dim=1)
-
                     data_queue.put(
                         {
                             "env_id": actor_id,
-                            "transition": (state_tensor, action, next_state_tensor, reward, done_tensor),
+                            "transition": None,
                             "return": episode_return,
                             "steps_done": steps_done,
                             "episodes_done": episode,
@@ -156,14 +149,27 @@ def main():
 
     while finished_episodes < const.NUM_EPISODES:
         rollout_data = replay_buffer_queue.get(block=True)
-        state, action, next_state, reward, done = rollout_data["transition"]
-        sac_wrapper.replay_buffer.push(state, action, next_state, reward, done)
+        if rollout_data["transition"] is not None:
+            state, action, next_state, reward, done = rollout_data["transition"]
+            sac_wrapper.replay_buffer.push(
+                copy.deepcopy(state),
+                copy.deepcopy(action),
+                copy.deepcopy(next_state),
+                copy.deepcopy(reward),
+                copy.deepcopy(done),
+            )
 
-        if done.item():
+            if done.item():
+                finished_episodes += 1
+                sac_wrapper.episode_terminated(rollout_data["return"], total_steps_done)
+
+            del rollout_data, state, action, next_state, reward, done
+        else:
             finished_episodes += 1
             sac_wrapper.episode_terminated(rollout_data["return"], total_steps_done)
 
-        del rollout_data, state, action, next_state, reward, done
+            del rollout_data
+
         total_steps_done += 1
 
         if total_steps_done % const.EVAL_FREQUENCY == 0 and finished_episodes > 0:
