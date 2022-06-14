@@ -66,6 +66,9 @@ class ReplayBuffer:
     def sample(self) -> Tuple[List, np.array, np.array]:
         raise NotImplementedError("Replay buffer does not implement 'sample()' method!")
 
+    def sample_curl(self, crop_size: int):
+        raise NotImplementedError("Replay buffer does not implement 'sample_curl()' method!")
+
     def update(self, indices: np.array, priorities: np.array):
         pass
 
@@ -92,7 +95,7 @@ class ExperienceReplay(ReplayBuffer):
         sample_transitions = [self.buffer_flattened[idx][2] for idx in sample_indices]
         return sample_transitions, sample_indices, np.ones(self.batch_size)
 
-    def sample_curl(self, crop_size: int):
+    def sample_curl(self, crop_size: int) -> Tuple[List, np.array, np.array]:
         sample_indices = np.random.choice(list(self.buffer_flattened.keys()), size=self.batch_size)
         sample_transitions = [self.buffer_flattened[idx][2] for idx in sample_indices]
         for i, transition in enumerate(sample_transitions):
@@ -156,6 +159,36 @@ class PrioritizedExperienceReplay(ReplayBuffer):
             list(flattened_buffer.keys()), size=self.batch_size, p=probabilities, replace=False
         )
         sample_transitions = [flattened_buffer[idx][2] for idx in sample_indices]
+
+        weights = (probabilities[sample_indices] * len(self.buffer)) ** (-self.beta)
+        weights = np.array(weights / weights.max(), dtype=np.float32)
+
+        return sample_transitions, sample_indices, weights
+
+    def sample_curl(self, crop_size: int) -> Tuple[List, np.array, np.array]:
+        flattened_buffer = self.buffer_flattened
+        priorities_tmp = np.array([entry[3] for _, entry in flattened_buffer.items()])
+        probabilities = priorities_tmp ** self.alpha
+        probabilities /= probabilities.sum()
+
+        sample_indices = np.random.choice(
+            list(flattened_buffer.keys()), size=self.batch_size, p=probabilities, replace=False
+        )
+        sample_transitions = [flattened_buffer[idx][2] for idx in sample_indices]
+
+        for i, transition in enumerate(sample_transitions):
+            curl_transition = utils.TransitionCurl(
+                *(
+                    utils.random_crop(transition.state, crop_size),
+                    utils.random_crop(transition.state, crop_size),
+                    utils.random_crop(transition.state, crop_size),
+                    transition.action,
+                    utils.random_crop(transition.next_state, crop_size),
+                    transition.reward,
+                    transition.done,
+                )
+            )
+            sample_transitions[i] = curl_transition
 
         weights = (probabilities[sample_indices] * len(self.buffer)) ** (-self.beta)
         weights = np.array(weights / weights.max(), dtype=np.float32)

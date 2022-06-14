@@ -13,7 +13,7 @@ from torch.utils.tensorboard import SummaryWriter
 
 import sac_constants as const
 from networks.sac_networks import PolicyNet, Critic, Curl
-from q_learning.replay_buffers import ExperienceReplay
+from q_learning.replay_buffers import PrioritizedExperienceReplay
 from utils import utils
 from utils.utils import (
     explained_variance,
@@ -36,11 +36,15 @@ class SACWrapper:
         self.num_actions = num_actions
         self.writer = writer
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        self.replay_buffer = ExperienceReplay(
+        self.replay_buffer = PrioritizedExperienceReplay(
             const.REPLAY_BUFFER_LEN,
             const.BATCH_SIZE,
             const.N_STEP_RETURNS,
+            const.ALPHA,
+            const.BETA0,
+            const.REPLAY_DELAY,
             const.GAMMA,
+            const.NUM_ENVS,
         )
 
         self.critic = Critic(
@@ -122,11 +126,14 @@ class SACWrapper:
 
     @staticmethod
     def get_q_value_loss(estimated_q_values: torch.tensor, q_value_targets: torch.tensor) -> torch.Tensor:
-        q_value_loss_fn = nn.MSELoss(reduction="mean")
+        q_value_loss_fn = nn.MSELoss(reduction="none")
         return q_value_loss_fn(estimated_q_values, q_value_targets.detach())
 
-    def prepare_batch_data(self) -> Tuple[torch.tensor, torch.tensor, torch.tensor, torch.tensor, torch.tensor]:
-        transitions, _, _ = self.replay_buffer.sample()
+    def prepare_batch_data(
+        self,
+    ) -> Tuple[torch.tensor, torch.tensor, torch.tensor, torch.tensor, torch.tensor, torch.tensor, np.array]:
+        transitions, indices, weights = self.replay_buffer.sample()
+        weights = torch.FloatTensor(weights).to(self.device)
         batch = Transition(*zip(*transitions))
 
         state_batch, action_batch, reward_batch, next_state_batch, done_batch = (
@@ -145,12 +152,23 @@ class SACWrapper:
             done_batch.to(self.device),
         )
 
-        return state_batch, action_batch, reward_batch, next_state_batch, done_batch
+        return state_batch, action_batch, reward_batch, next_state_batch, done_batch, weights, indices
 
     def prepare_batch_data_curl(
         self,
-    ) -> Tuple[torch.tensor, torch.tensor, torch.tensor, torch.tensor, torch.tensor, torch.tensor, torch.tensor]:
-        transitions, _, _ = self.replay_buffer.sample_curl(const.INPUT_SIZE)
+    ) -> Tuple[
+        torch.tensor,
+        torch.tensor,
+        torch.tensor,
+        torch.tensor,
+        torch.tensor,
+        torch.tensor,
+        torch.tensor,
+        torch.Tensor,
+        np.array,
+    ]:
+        transitions, indices, weights = self.replay_buffer.sample_curl(const.INPUT_SIZE)
+        weights = torch.FloatTensor(weights).to(self.device)
         batch = TransitionCurl(*zip(*transitions))
 
         (
@@ -197,6 +215,8 @@ class SACWrapper:
             reward_batch,
             next_state_batch,
             done_batch,
+            weights,
+            indices,
         )
 
     def optimize_entropy_coeff(self, log_prob_batch: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
@@ -216,6 +236,8 @@ class SACWrapper:
         reward_batch: torch.Tensor,
         done_batch: torch.Tensor,
         entropy_coeff: torch.Tensor,
+        weights: torch.Tensor,
+        indices: np.array,
     ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         with torch.no_grad():
             new_next_action_batch, new_next_log_prob_batch, _ = self.policy_net.evaluate(
@@ -231,16 +253,21 @@ class SACWrapper:
 
         q1_values, q2_values = self.critic(state_batch, action_batch.unsqueeze(1), detach_encoder=False)
         q1_values, q2_values = q1_values.squeeze(), q2_values.squeeze()
-        q_value_loss1 = self.get_q_value_loss(q1_values.float(), target_q_values.float())
-        q_value_loss2 = self.get_q_value_loss(q2_values.float(), target_q_values.float())
-        q_value_loss = q_value_loss1 + q_value_loss2
+        q_value_losses1 = self.get_q_value_loss(q1_values.float(), target_q_values.float())
+        q_value_losses2 = self.get_q_value_loss(q2_values.float(), target_q_values.float())
+        q_value_losses = q_value_losses1 + q_value_losses2
+        weighted_q_value_losses = weights * q_value_losses
+        weighted_q_value_loss = weighted_q_value_losses.mean()
 
         self.critic_optimizer.zero_grad()
-        q_value_loss.backward()
+        weighted_q_value_loss.backward()
         clip_gradients(self.critic, const.CLIP_GRAD)
         self.critic_optimizer.step()
 
-        return q_value_loss, q1_values, target_q_values
+        self.replay_buffer.step()
+        self.replay_buffer.update(indices, (q_value_losses + 1e-8).view(-1).data.cpu().numpy())
+
+        return weighted_q_value_loss, q1_values, target_q_values
 
     def optimize_actor(
         self,
@@ -289,6 +316,8 @@ class SACWrapper:
                 reward_batch,
                 next_state_batch,
                 done_batch,
+                weights,
+                indices,
             ) = self.prepare_batch_data_curl()
 
             new_action_batch, log_prob_batch, new_policy = self.policy_net.evaluate(
@@ -298,7 +327,14 @@ class SACWrapper:
             entropy_coeff, entropy_coeff_loss = self.optimize_entropy_coeff(log_prob_batch)
 
             q_value_loss, q1_values, target_q_values = self.optimize_critic(
-                state_batch, action_batch, next_state_batch, reward_batch, done_batch, entropy_coeff
+                state_batch,
+                action_batch,
+                next_state_batch,
+                reward_batch,
+                done_batch,
+                entropy_coeff,
+                weights,
+                indices,
             )
 
             policy_loss = self.optimize_actor(state_batch, new_action_batch, log_prob_batch, entropy_coeff)
