@@ -23,8 +23,8 @@ def make_env(env_id: int):
 
 def collect_rollouts(
     actor_id: int,
-    policy_net_old: PolicyNet,
-    value_net_old: ValueNet,
+    shared_policy_net_old: PolicyNet,
+    shared_value_net_old: ValueNet,
     horizon: int,
     data_queue: mp.Queue,
     trainer_event: mp.Event,
@@ -33,6 +33,8 @@ def collect_rollouts(
     num_actions: int,
     num_episodes: int,
 ):
+    local_policy_net_old = copy.deepcopy(shared_policy_net_old).to(device)
+    local_value_net_old = copy.deepcopy(shared_value_net_old).to(device)
     env = make_env(actor_id)
     steps_done = 0
 
@@ -69,8 +71,8 @@ def collect_rollouts(
 
             with torch.no_grad():
                 state_tensor.to(device)
-                policy = policy_net_old(state_tensor.to(device))
-                value = value_net_old(state_tensor.to(device))
+                policy = local_policy_net_old(state_tensor.to(device))
+                value = local_value_net_old(state_tensor.to(device))
                 action = policy.sample()
 
             _, reward, done, _ = env.step(action.item())

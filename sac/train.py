@@ -23,12 +23,13 @@ def make_env(env_id: int):
 
 def collect_rollouts(
     actor_id: int,
-    policy_net: PolicyNet,
+    shared_policy_net: PolicyNet,
     data_queue: mp.Queue,
     learner_event: mp.Event,
     device: torch.device,
     num_episodes: int,
 ):
+    local_policy_net = copy.deepcopy(shared_policy_net).to(device)
     env = make_env(actor_id)
     steps_done = 0
 
@@ -46,6 +47,8 @@ def collect_rollouts(
         for step in count():
             while learner_event.is_set():
                 continue
+
+            local_policy_net.load_state_dict(shared_policy_net.state_dict())
 
             if step < no_op_steps:
                 _, _, done, _ = env.step(env.action_space.sample())
@@ -76,7 +79,7 @@ def collect_rollouts(
                 u = torch.from_numpy(env.action_space.sample()).to(device)
                 action = torch.tanh(u)
             else:
-                action, u = policy_net.get_action(
+                action, u = local_policy_net.get_action(
                     utils.center_crop(state_tensor.to(device), const.INPUT_SIZE), eval_mode=False
                 )
                 action, u = action.squeeze(1), u.squeeze(1)
@@ -152,6 +155,7 @@ def main():
         if rollout_data["transition"] is not None:
             state, action, next_state, reward, done = rollout_data["transition"]
             sac_wrapper.replay_buffer.push(
+                rollout_data["env_id"],
                 copy.deepcopy(state),
                 copy.deepcopy(action),
                 copy.deepcopy(next_state),
@@ -192,6 +196,5 @@ def main():
 
 
 if __name__ == "__main__":
-    mp.set_sharing_strategy("file_system")
     mp.set_start_method("spawn")
     main()

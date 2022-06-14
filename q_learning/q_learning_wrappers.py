@@ -31,6 +31,7 @@ class DeepQLearningBaseWrapper:
             const.BETA0,
             const.REPLAY_DELAY,
             const.GAMMA,
+            const.NUM_ENVS,
         )
 
         self.policy_net = get_network(
@@ -45,6 +46,7 @@ class DeepQLearningBaseWrapper:
             const.NUM_FC_HIDDEN_UNITS,
             const.NUM_CHANNELS,
         ).to(self.device)
+        self.policy_net.share_memory()
         self.target_net = get_network(
             network_name,
             screen_width,
@@ -184,25 +186,20 @@ class DeepQLearningBaseWrapper:
         return weighted_loss
 
     def optimize_model(self, steps_done: int = None):
-        if len(self.replay_buffer) < const.MIN_START_STEPS:
-            return
+        for _ in range(const.NUM_GRADIENT_STEPS):
+            (
+                state_batch,
+                action_batch,
+                reward_batch,
+                next_state_batch,
+                done_batch,
+                weights,
+                indices,
+            ) = self.prepare_batch_data()
 
-        if len(self.replay_buffer) == const.MIN_START_STEPS:
-            print(f"START OPTIMIZATION")
-
-        (
-            state_batch,
-            action_batch,
-            reward_batch,
-            next_state_batch,
-            done_batch,
-            weights,
-            indices,
-        ) = self.prepare_batch_data()
-
-        estimated_q_values = self.get_q_value_estimate(state_batch, action_batch)
-        td_targets, next_state_action_values = self.get_td_targets(reward_batch, next_state_batch, done_batch)
-        weighted_loss = self.optimization_step(estimated_q_values, td_targets, weights, indices)
+            estimated_q_values = self.get_q_value_estimate(state_batch, action_batch)
+            td_targets, next_state_action_values = self.get_td_targets(reward_batch, next_state_batch, done_batch)
+            weighted_loss = self.optimization_step(estimated_q_values, td_targets, weights, indices)
 
         if steps_done % const.TARGET_UPDATE == 0:
             self.update_target_network()
@@ -231,6 +228,12 @@ class DeepQLearningBaseWrapper:
         estimated_q_value_distribution: torch.tensor = None,
         td_target_distribution: torch.tensor = None,
     ):
+        self.writer.add_scalar(
+            "Hyperparam/Epsilon",
+            utils.schedule_epsilon(steps_done, const.NOISY_NETS, const.EPS_START, const.EPS_END, const.EPS_DECAY),
+            steps_done,
+        )
+
         self.writer.add_scalar("Training/Loss", loss, steps_done)
         self.writer.add_scalar("Hyperparam/Beta", self.replay_buffer.beta, steps_done)
 

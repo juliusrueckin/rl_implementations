@@ -88,8 +88,9 @@ class BatchMemory:
         batches_indices = [transition_indices[i : i + self.batch_size] for i in batch_start_indices]
 
         batches = []
+        transitions_concatenated = self.concatenated_transitions
         for batch_indices in batches_indices:
-            batches.append([self.concatenated_transitions[batch_index] for batch_index in batch_indices])
+            batches.append([transitions_concatenated[batch_index] for batch_index in batch_indices])
 
         return batches
 
