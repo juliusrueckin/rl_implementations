@@ -82,9 +82,9 @@ class PPOWrapper:
             best_model_file_path = os.path.join(const.LOG_DIR, "best_policy_net.pth")
             torch.save(self.policy_net, best_model_file_path)
 
-    def update_old_networks(self):
+    def update_networks(self):
         self.policy_net_old.load_state_dict(self.policy_net.state_dict())
-        self.value_net_old.load_state_dict(self.value_net.state_dict())
+        self.value_net_old.load_state_dict(self.value_net_old.state_dict())
 
     @staticmethod
     def get_policy_loss(
@@ -106,49 +106,37 @@ class PPOWrapper:
 
     @staticmethod
     def get_value_loss(estimated_values: torch.tensor, value_targets: torch.tensor) -> torch.Tensor:
-        value_loss_fn = nn.SmoothL1Loss(reduction="mean")
+        value_loss_fn = nn.MSELoss(reduction="mean")
         return value_loss_fn(estimated_values, value_targets.detach())
 
     def prepare_batch_data(
         self, transitions: List[TransitionPPO]
-    ) -> Tuple[torch.Tensor, torch.Tensor, Categorical, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+    ) -> Tuple[torch.Tensor, torch.Tensor, Categorical, torch.Tensor, torch.Tensor, torch.Tensor]:
         batch = TransitionPPO(*zip(*transitions))
-        state_batch, action_batch, policy_batch, reward_batch, value_batch, advantage_batch, return_batch = (
+        state_batch, action_batch, policy_batch, reward_batch, advantage_batch, return_batch = (
             torch.cat(batch.state),
             torch.cat(batch.action),
             torch.cat([dist.probs for dist in batch.policy]),
             torch.cat(batch.reward),
-            torch.cat(batch.value),
             torch.cat(batch.advantage),
             torch.cat(batch.return_t),
         )
 
-        state_batch, action_batch, policy_batch, reward_batch, value_batch, advantage_batch, return_batch = (
+        state_batch, action_batch, policy_batch, reward_batch, advantage_batch, return_batch = (
             state_batch.to(self.device),
             action_batch.to(self.device),
             Categorical(policy_batch.to(self.device)),
             reward_batch.to(self.device),
-            value_batch.to(self.device),
             advantage_batch.to(self.device),
             return_batch.to(self.device),
         )
 
-        return state_batch, action_batch, policy_batch, reward_batch, value_batch, advantage_batch, return_batch
-
-    def compute_last_step_info(self) -> Tuple[torch.Tensor, torch.Tensor]:
-        last_states = torch.cat([self.batch_memory.transitions[env_id][-1].state for env_id in range(const.NUM_ENVS)])
-        last_values = self.value_net_old(last_states)
-        last_dones = torch.tensor(
-            [int(self.batch_memory.transitions[env_id][-1].done) for env_id in range(const.NUM_ENVS)]
-        )
-
-        return last_values, last_dones
+        return state_batch, action_batch, policy_batch, reward_batch, advantage_batch, return_batch
 
     def optimize_model(self, steps_done: int):
         for _ in range(const.NUM_EPOCHS):
             clip_epsilon = schedule_clip_epsilon(const.CLIP_EPSILON, steps_done, const.NUM_EPISODES)
-            last_values, last_dones = self.compute_last_step_info()
-            batches = self.batch_memory.get(last_values, last_dones)
+            batches = self.batch_memory.get(self.value_net, self.device)
 
             for batch in batches:
                 (
@@ -156,7 +144,6 @@ class PPOWrapper:
                     action_batch,
                     old_policy_batch,
                     reward_batch,
-                    old_value_batch,
                     advantage_batch,
                     value_target_batch,
                 ) = self.prepare_batch_data(batch)
@@ -164,8 +151,7 @@ class PPOWrapper:
                 policy_batch = self.policy_net(state_batch)
                 value_batch = self.value_net(state_batch)
 
-                old_value_batch, value_batch, advantage_batch, value_target_batch = (
-                    old_value_batch.squeeze(),
+                value_batch, advantage_batch, value_target_batch = (
                     value_batch.squeeze(),
                     advantage_batch.squeeze(),
                     value_target_batch.squeeze(),

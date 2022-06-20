@@ -70,9 +70,7 @@ def collect_rollouts(
                 continue
 
             with torch.no_grad():
-                state_tensor.to(device)
                 policy = local_policy_net_old(state_tensor.to(device))
-                value = local_value_net_old(state_tensor.to(device))
                 action = policy.sample()
 
             _, reward, done, _ = env.step(action.item())
@@ -84,13 +82,19 @@ def collect_rollouts(
             next_state.append(next_observation)
             next_state_tensor = torch.stack(tuple(next_state), dim=1)
 
+            last_value = torch.zeros(1, device=device)
+            if steps_done % horizon == 0 and not done:
+                with torch.no_grad():
+                    last_value = local_value_net_old(next_state_tensor.to(device))
+
             data_queue.put(
                 {
                     "env_id": actor_id,
-                    "transition": (state_tensor, action, policy, reward, done, value),
+                    "transition": (state_tensor, action, policy, reward, done),
                     "return": episode_return,
                     "steps_done": steps_done,
                     "episodes_done": episode,
+                    "last_value": last_value,
                 }
             )
 
@@ -149,8 +153,9 @@ def main():
 
     while finished_episodes < const.NUM_EPISODES:
         rollout_data = batch_memory_queue.get(block=True)
-        state, action, policy, reward, done, value = rollout_data["transition"]
+        state, action, policy, reward, done = rollout_data["transition"]
         env_id = rollout_data["env_id"]
+        last_value = rollout_data["last_value"]
         ppo_wrapper.batch_memory.add(
             copy.deepcopy(env_id),
             copy.deepcopy(state),
@@ -158,20 +163,20 @@ def main():
             copy.deepcopy(policy),
             copy.deepcopy(reward),
             copy.deepcopy(done),
-            copy.deepcopy(value),
+            copy.deepcopy(last_value),
         )
 
         if done:
             finished_episodes += 1
-            ppo_wrapper.episode_terminated(rollout_data["return"], total_steps_done)
+            ppo_wrapper.episode_terminated(rollout_data["return"], finished_episodes)
 
-        del rollout_data, state, action, policy, reward, done, value, env_id
+        del rollout_data, state, action, policy, reward, done, env_id, last_value
         total_steps_done += 1
 
         if len(ppo_wrapper.batch_memory) % (const.HORIZON * const.NUM_ENVS) == 0 and len(ppo_wrapper.batch_memory) > 0:
             print(f"OPTIMIZE MODEL at STEP {total_steps_done}")
             ppo_wrapper.optimize_model(total_steps_done)
-            ppo_wrapper.update_old_networks()
+            ppo_wrapper.update_networks()
             ppo_wrapper.batch_memory.clear()
 
             for trainer_event in trainer_events:

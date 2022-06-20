@@ -5,6 +5,7 @@ import torch
 from torch.distributions import Distribution
 
 import ppo_constants as const
+from networks.ppo_networks import ValueNet
 from utils.utils import TransitionPPO
 
 
@@ -13,6 +14,7 @@ class BatchMemory:
         self.batch_size = batch_size
         self.num_envs = num_envs
         self.transitions = {env_id: [] for env_id in range(num_envs)}
+        self.last_values = {env_id: 0 for env_id in range(num_envs)}
 
     def clear(self):
         self.transitions = {env_id: [] for env_id in range(self.num_envs)}
@@ -25,60 +27,45 @@ class BatchMemory:
         policy: Distribution,
         reward: torch.Tensor,
         done: torch.Tensor,
-        value: torch.Tensor,
+        last_value: torch.Tensor,
     ):
-        self.transitions[env_id].append(TransitionPPO(state, action, policy, reward, done, value, None, None))
+        self.last_values[env_id] = last_value
+        self.transitions[env_id].append(TransitionPPO(state, action, policy, reward, done, None, None))
 
-    def compute_advantages(self, last_values: torch.Tensor, last_dones: torch.Tensor):
+    def compute_advantages(self, value_net: ValueNet, device: torch.device):
         for env_id in range(self.num_envs):
-            for t in range(len(self.transitions[env_id])):
-                advantage_t = 0
-                for i in range(t, len(self.transitions[env_id])):
-                    discount_factor = (const.GAMMA * const.LAMBDA) ** (i - t)
-                    if self.transitions[env_id][i].done:
-                        advantage_t += discount_factor * (
-                            self.transitions[env_id][i].reward - self.transitions[env_id][i].value
-                        )
-                        break
+            last_advantage = 0
+            for t in reversed(range(len(self.transitions[env_id]))):
+                if t == len(self.transitions[env_id]) - 1:
+                    next_non_terminal = 1.0 - int(self.transitions[env_id][-1].done)
+                    next_values = self.last_values[env_id]
+                else:
+                    next_non_terminal = 1.0 - int(self.transitions[env_id][t + 1].done)
+                    with torch.no_grad():
+                        next_values = value_net(self.transitions[env_id][t + 1].state.to(device))
 
-                    if i == const.HORIZON - 1:
-                        advantage_t += discount_factor * (
-                            self.transitions[env_id][i].reward
-                            + last_values[env_id] * (1 - last_dones[env_id])
-                            - self.transitions[env_id][i].value
-                        )
-                        break
-
-                    advantage_t += discount_factor * (
-                        self.transitions[env_id][i].reward
-                        + const.GAMMA * self.transitions[env_id][i + 1].value
-                        - self.transitions[env_id][i].value
+                with torch.no_grad():
+                    delta = (
+                        self.transitions[env_id][t].reward
+                        + const.GAMMA * next_non_terminal * next_values
+                        - value_net(self.transitions[env_id][t].state.to(device))
                     )
+                last_advantage = delta + const.GAMMA * const.LAMBDA * next_non_terminal * last_advantage
+                self.transitions[env_id][t] = self.transitions[env_id][t]._replace(advantage=last_advantage)
 
-                self.transitions[env_id][t] = self.transitions[env_id][t]._replace(
-                    advantage=torch.tensor([advantage_t])
-                )
-
-    def compute_returns(self, last_values: torch.Tensor, last_dones: torch.Tensor):
+    def compute_returns(self, value_net: ValueNet, device: torch.device):
         for env_id in range(self.num_envs):
             for t in range(len(self.transitions[env_id])):
-                return_t = 0
-                for i in range(t, len(self.transitions[env_id])):
-                    discount_factor = const.GAMMA ** (i - t)
-                    return_t += discount_factor * self.transitions[env_id][i].reward
-                    if self.transitions[env_id][i].done:
-                        break
+                with torch.no_grad():
+                    return_t = self.transitions[env_id][t].advantage + value_net(
+                        self.transitions[env_id][t].state.to(device)
+                    )
+                    self.transitions[env_id][t] = self.transitions[env_id][t]._replace(return_t=return_t)
 
-                    if i == const.HORIZON - 1:
-                        return_t += self.transitions[env_id][i].reward + discount_factor * last_values[env_id] * (
-                            1 - last_dones[env_id]
-                        )
+    def get(self, value_net: ValueNet, device: torch.device) -> List:
+        self.compute_advantages(value_net, device)
+        self.compute_returns(value_net, device)
 
-                self.transitions[env_id][t] = self.transitions[env_id][t]._replace(return_t=torch.tensor([return_t]))
-
-    def get(self, last_values: torch.Tensor, last_dones: torch.Tensor) -> List:
-        self.compute_returns(last_values, last_dones)
-        self.compute_advantages(last_values, last_dones)
         if const.NORMALIZE_VALUES:
             self.normalize_values()
 

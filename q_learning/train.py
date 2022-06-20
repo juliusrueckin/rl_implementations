@@ -177,12 +177,12 @@ def main():
 
             if done.item():
                 finished_episodes += 1
-                deep_q_learning_wrapper.episode_terminated(rollout_data["return"], total_steps_done)
+                deep_q_learning_wrapper.episode_terminated(rollout_data["return"], finished_episodes)
 
             del rollout_data, state, action, next_state, reward, done
         else:
             finished_episodes += 1
-            deep_q_learning_wrapper.episode_terminated(rollout_data["return"], total_steps_done)
+            deep_q_learning_wrapper.episode_terminated(rollout_data["return"], finished_episodes)
 
             del rollout_data
 

@@ -14,9 +14,7 @@ Transition = namedtuple("Transition", ("state", "action", "next_state", "reward"
 TransitionCurl = namedtuple(
     "Transition", ("state", "state_anchor", "state_target", "action", "next_state", "reward", "done")
 )
-TransitionPPO = namedtuple(
-    "TransitionPPO", ("state", "action", "policy", "reward", "done", "value", "advantage", "return_t")
-)
+TransitionPPO = namedtuple("TransitionPPO", ("state", "action", "policy", "reward", "done", "advantage", "return_t"))
 
 
 def get_cart_location(env, screen_width: int) -> int:
