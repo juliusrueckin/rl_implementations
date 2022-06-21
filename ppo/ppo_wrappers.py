@@ -84,7 +84,7 @@ class PPOWrapper:
 
     def update_networks(self):
         self.policy_net_old.load_state_dict(self.policy_net.state_dict())
-        self.value_net_old.load_state_dict(self.value_net_old.state_dict())
+        self.value_net_old.load_state_dict(self.value_net.state_dict())
 
     @staticmethod
     def get_policy_loss(
