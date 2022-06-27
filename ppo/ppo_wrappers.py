@@ -19,7 +19,14 @@ from utils.utils import explained_variance, TransitionPPO, schedule_clip_epsilon
 
 
 class PPOWrapper:
-    def __init__(self, width: int, height: int, num_actions: int, writer: SummaryWriter = None):
+    def __init__(
+        self,
+        width: int,
+        height: int,
+        num_actions: int,
+        writer: SummaryWriter = None,
+        policy_net_checkpoint: str = None,
+    ):
         self.num_actions = num_actions
         self.writer = writer
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -33,6 +40,10 @@ class PPOWrapper:
             num_fc_hidden_units=const.NUM_FC_HIDDEN_UNITS,
             num_channels=const.NUM_CHANNELS,
         ).to(self.device)
+
+        if policy_net_checkpoint is not None:
+            self.policy_net.load_state_dict(torch.load(policy_net_checkpoint, map_location=self.device))
+
         self.policy_net_old = PolicyNet(
             width,
             height,
@@ -80,7 +91,7 @@ class PPOWrapper:
         if len(self.episode_returns) >= const.EPISODES_PATIENCE and running_mean_return > self.max_mean_episode_return:
             self.max_mean_episode_return = running_mean_return
             best_model_file_path = os.path.join(const.LOG_DIR, "best_policy_net.pth")
-            torch.save(self.policy_net, best_model_file_path)
+            torch.save(self.policy_net.state_dict(), best_model_file_path)
 
     def update_networks(self):
         self.policy_net_old.load_state_dict(self.policy_net.state_dict())
@@ -235,12 +246,10 @@ class PPOWrapper:
                 if params.grad is not None:
                     self.writer.add_histogram(f"Value-Parameters/{tag}", params.data.cpu().numpy(), steps_done)
 
-    def eval_policy(self, steps_done: int):
+    def eval_policy(self, steps_done: int, env):
         print(f"EVALUATE PPO POLICY AFTER {steps_done} STEPS")
-        env = gym.make(const.ENV_NAME)
-        env.reset()
-
         episode_returns = np.zeros(const.EVAL_EPISODE_COUNT)
+
         for episode in range(const.EVAL_EPISODE_COUNT):
             env.reset()
             observation = utils.get_cartpole_screen(env, const.INPUT_SIZE)

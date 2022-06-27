@@ -1,3 +1,4 @@
+import os
 import random
 from collections import namedtuple, deque
 from typing import List, Union
@@ -158,6 +159,15 @@ def random_crop(x: torch.Tensor, crop_size: int) -> torch.Tensor:
 def center_crop(x: torch.Tensor, crop_size: int) -> torch.Tensor:
     transform = T.Compose([T.CenterCrop(crop_size)])
     return transform(x)
+
+
+def set_all_seeds(seed: int):
+    random.seed(seed)
+    os.environ["PYTHONHASHSEED"] = str(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed(seed)
+    torch.backends.cudnn.deterministic = True
 
 
 class ValueStats:

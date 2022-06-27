@@ -186,7 +186,7 @@ def main():
             for eval_event in eval_events:
                 eval_event.set()
 
-            ppo_wrapper.eval_policy(total_steps_done)
+            ppo_wrapper.eval_policy(total_steps_done, make_env(100))
 
             for eval_event in eval_events:
                 eval_event.clear()
