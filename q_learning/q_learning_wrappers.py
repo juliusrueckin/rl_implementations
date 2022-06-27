@@ -18,7 +18,13 @@ from utils import utils
 
 class DeepQLearningBaseWrapper:
     def __init__(
-        self, screen_width: int, screen_height: int, num_actions: int, network_name: str, writer: SummaryWriter = None
+        self,
+        screen_width: int,
+        screen_height: int,
+        num_actions: int,
+        network_name: str,
+        writer: SummaryWriter = None,
+        policy_net_checkpoint: str = None,
     ):
         self.num_actions = num_actions
         self.writer = writer
@@ -47,6 +53,10 @@ class DeepQLearningBaseWrapper:
             const.NUM_CHANNELS,
         ).to(self.device)
         self.policy_net.share_memory()
+
+        if policy_net_checkpoint is not None:
+            self.policy_net.load_state_dict(torch.load(policy_net_checkpoint, map_location=self.device))
+
         self.target_net = get_network(
             network_name,
             screen_width,
@@ -74,7 +84,7 @@ class DeepQLearningBaseWrapper:
         if len(self.episode_returns) >= const.EPISODES_PATIENCE and running_mean_return > self.max_mean_episode_return:
             self.max_mean_episode_return = running_mean_return
             best_model_file_path = os.path.join(const.LOG_DIR, "best_policy_net.pth")
-            torch.save(self.policy_net, best_model_file_path)
+            torch.save(self.policy_net.state_dict(), best_model_file_path)
 
     @staticmethod
     def get_loss(estimated_q_values: torch.tensor, td_targets: torch.tensor) -> torch.tensor:
@@ -257,12 +267,10 @@ class DeepQLearningBaseWrapper:
                 if params.grad is not None:
                     self.writer.add_histogram(f"Parameters/{tag}", params.data.cpu().numpy(), steps_done)
 
-    def eval_policy(self, steps_done: int):
+    def eval_policy(self, steps_done: int, env):
         print(f"EVALUATE Q-LEARNING POLICY AFTER {steps_done} STEPS")
-        env = gym.make(const.ENV_NAME)
-        env.reset()
-
         episode_returns = np.zeros(const.EVAL_EPISODE_COUNT)
+
         for episode in range(const.EVAL_EPISODE_COUNT):
             env.reset()
             observation = utils.get_cartpole_screen(env, const.INPUT_SIZE)
@@ -328,9 +336,15 @@ class DeepQLearningBaseWrapper:
 
 class DeepQLearningWrapper(DeepQLearningBaseWrapper):
     def __init__(
-        self, screen_width: int, screen_height: int, num_actions: int, network_name: str, writer: SummaryWriter = None
+        self,
+        screen_width: int,
+        screen_height: int,
+        num_actions: int,
+        network_name: str,
+        writer: SummaryWriter = None,
+        policy_net_checkpoint: str = None,
     ):
-        super().__init__(screen_width, screen_height, num_actions, network_name, writer)
+        super().__init__(screen_width, screen_height, num_actions, network_name, writer, policy_net_checkpoint)
 
     def get_td_targets(
         self,
@@ -357,9 +371,15 @@ class DeepQLearningWrapper(DeepQLearningBaseWrapper):
 
 class DoubleDeepQLearningWrapper(DeepQLearningBaseWrapper):
     def __init__(
-        self, screen_width: int, screen_height: int, num_actions: int, network_name: str, writer: SummaryWriter = None
+        self,
+        screen_width: int,
+        screen_height: int,
+        num_actions: int,
+        network_name: str,
+        writer: SummaryWriter = None,
+        policy_net_checkpoint: str = None,
     ):
-        super().__init__(screen_width, screen_height, num_actions, network_name, writer)
+        super().__init__(screen_width, screen_height, num_actions, network_name, writer, policy_net_checkpoint)
 
         self.policy_net_eval = get_network(
             network_name,
