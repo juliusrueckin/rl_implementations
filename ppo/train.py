@@ -3,7 +3,6 @@ import random
 from collections import deque
 from itertools import count
 
-import gym
 import torch
 from torch import multiprocessing as mp
 from torch.utils.tensorboard import SummaryWriter
@@ -12,13 +11,6 @@ import ppo_constants as const
 from networks.ppo_networks import PolicyNet, ValueNet
 from ppo.ppo_wrappers import PPOWrapper
 from utils import utils
-
-
-def make_env(env_id: int):
-    env = gym.make(const.ENV_NAME)
-    env.seed(env_id)
-    env.reset()
-    return env
 
 
 def collect_rollouts(
@@ -35,7 +27,7 @@ def collect_rollouts(
 ):
     local_policy_net_old = copy.deepcopy(shared_policy_net_old).to(device)
     local_value_net_old = copy.deepcopy(shared_value_net_old).to(device)
-    env = make_env(actor_id)
+    env = utils.make_env(actor_id, const.ENV_NAME)
     steps_done = 0
 
     for episode in range(num_episodes):
@@ -114,7 +106,7 @@ def collect_rollouts(
 def main():
     writer = SummaryWriter(log_dir=const.LOG_DIR)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    tmp_env = make_env(100)
+    tmp_env = utils.make_env(100, const.ENV_NAME)
 
     init_screen = utils.get_cartpole_screen(tmp_env, const.INPUT_SIZE)
     _, screen_height, screen_width = init_screen.shape
@@ -186,7 +178,7 @@ def main():
             for eval_event in eval_events:
                 eval_event.set()
 
-            ppo_wrapper.eval_policy(total_steps_done, make_env(100))
+            ppo_wrapper.eval_policy(total_steps_done, utils.make_env(100, const.ENV_NAME))
 
             for eval_event in eval_events:
                 eval_event.clear()

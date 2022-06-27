@@ -3,6 +3,7 @@ import random
 from collections import namedtuple, deque
 from typing import List, Union
 
+import gym
 import numpy as np
 import torch
 from PIL import Image
@@ -16,6 +17,13 @@ TransitionCurl = namedtuple(
     "Transition", ("state", "state_anchor", "state_target", "action", "next_state", "reward", "done")
 )
 TransitionPPO = namedtuple("TransitionPPO", ("state", "action", "policy", "reward", "done", "advantage", "return_t"))
+
+
+def make_env(env_id: int, env_name: str):
+    env = gym.make(env_name)
+    env.seed(env_id)
+    env.reset()
+    return env
 
 
 def get_cart_location(env, screen_width: int) -> int:

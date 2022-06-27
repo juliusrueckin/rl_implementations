@@ -4,7 +4,6 @@ from collections import deque
 from itertools import count
 from typing import Union
 
-import gym
 import torch
 from torch import multiprocessing as mp
 from torch.utils.tensorboard import SummaryWriter
@@ -13,13 +12,6 @@ import q_learning_constants as const
 from networks.q_networks import DuelingDQN, DQN
 from q_learning import get_q_learning_wrapper
 from utils import utils
-
-
-def make_env(env_id: int):
-    env = gym.make(const.ENV_NAME)
-    env.seed(env_id)
-    env.reset()
-    return env
 
 
 def collect_rollouts(
@@ -32,7 +24,7 @@ def collect_rollouts(
     num_actions: int,
 ):
     local_policy_net = copy.deepcopy(shared_policy_net).to(device)
-    env = make_env(actor_id)
+    env = utils.make_env(actor_id, const.ENV_NAME)
     steps_done = 0
 
     for episode in range(num_episodes):
@@ -128,7 +120,7 @@ def main():
     writer = SummaryWriter(log_dir=const.LOG_DIR)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    tmp_env = make_env(100)
+    tmp_env = utils.make_env(100, const.ENV_NAME)
     init_screen = utils.get_cartpole_screen(tmp_env, const.INPUT_SIZE)
     _, screen_height, screen_width = init_screen.shape
     num_actions = tmp_env.action_space.n
@@ -192,7 +184,7 @@ def main():
             for learner_event in learner_events:
                 learner_event.set()
 
-            deep_q_learning_wrapper.eval_policy(total_steps_done, make_env(100))
+            deep_q_learning_wrapper.eval_policy(total_steps_done, utils.make_env(100, const.ENV_NAME))
 
             for learner_event in learner_events:
                 learner_event.clear()

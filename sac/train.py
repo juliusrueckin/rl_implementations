@@ -3,7 +3,6 @@ import random
 from collections import deque
 from itertools import count
 
-import gym
 import torch
 from torch import multiprocessing as mp
 from torch.utils.tensorboard import SummaryWriter
@@ -12,13 +11,6 @@ import sac_constants as const
 from networks.sac_networks import PolicyNet
 from sac.sac_wrapper import SACWrapper
 from utils import utils
-
-
-def make_env(env_id: int):
-    env = gym.make(const.ENV_NAME)
-    env.seed(env_id)
-    env.reset()
-    return env
 
 
 def collect_rollouts(
@@ -30,7 +22,7 @@ def collect_rollouts(
     num_episodes: int,
 ):
     local_policy_net = copy.deepcopy(shared_policy_net).to(device)
-    env = make_env(actor_id)
+    env = utils.make_env(actor_id, const.ENV_NAME)
     steps_done = 0
 
     for episode in range(num_episodes):
@@ -118,7 +110,7 @@ def main():
     writer = SummaryWriter(log_dir=const.LOG_DIR)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    tmp_env = make_env(100)
+    tmp_env = utils.make_env(100, const.ENV_NAME)
     init_screen = utils.get_pendulum_screen(tmp_env, const.IMAGE_SIZE)
     _, screen_height, screen_width = utils.random_crop(init_screen, const.INPUT_SIZE).shape
     action_dim = tmp_env.action_space.shape[0]
@@ -180,7 +172,7 @@ def main():
             for learner_event in learner_events:
                 learner_event.set()
 
-            sac_wrapper.eval_policy(total_steps_done, make_env(100))
+            sac_wrapper.eval_policy(total_steps_done, utils.make_env(100, const.ENV_NAME))
 
             for learner_event in learner_events:
                 learner_event.clear()
