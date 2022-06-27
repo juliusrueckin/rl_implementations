@@ -180,7 +180,7 @@ def main():
             for learner_event in learner_events:
                 learner_event.set()
 
-            sac_wrapper.eval_policy(total_steps_done)
+            sac_wrapper.eval_policy(total_steps_done, make_env(100))
 
             for learner_event in learner_events:
                 learner_event.clear()

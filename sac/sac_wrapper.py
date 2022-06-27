@@ -4,7 +4,6 @@ from collections import deque
 from itertools import count
 from typing import Tuple
 
-import gym
 import numpy as np
 import torch
 from torch import nn
@@ -30,7 +29,13 @@ from utils.utils import (
 
 class SACWrapper:
     def __init__(
-        self, width: int, height: int, num_actions: int, action_limits: torch.tensor, writer: SummaryWriter = None
+        self,
+        width: int,
+        height: int,
+        num_actions: int,
+        action_limits: torch.tensor,
+        writer: SummaryWriter = None,
+        policy_net_checkpoint: str = None,
     ):
         self.value_stats = ValueStats()
         self.num_actions = num_actions
@@ -82,6 +87,9 @@ class SACWrapper:
             self.policy_net.encoder.load_state_dict(self.critic.encoder.state_dict())
         self.policy_net.share_memory()
 
+        if policy_net_checkpoint is not None:
+            self.policy_net.load_state_dict(torch.load(policy_net_checkpoint, map_location=self.device))
+
         self.policy_optimizer = torch.optim.Adam(self.policy_net.parameters(), lr=const.POLICY_LEARNING_RATE)
         self.critic_optimizer = torch.optim.Adam(self.critic.parameters(), lr=const.Q_VALUE_LEARNING_RATE)
 
@@ -107,7 +115,7 @@ class SACWrapper:
         if len(self.episode_returns) >= const.EPISODES_PATIENCE and running_mean_return > self.max_mean_episode_return:
             self.max_mean_episode_return = running_mean_return
             best_model_file_path = os.path.join(const.LOG_DIR, "best_policy_net.pth")
-            torch.save(self.policy_net, best_model_file_path)
+            torch.save(self.policy_net.state_dict(), best_model_file_path)
 
     def update_target_networks(self):
         with torch.no_grad():
@@ -390,12 +398,10 @@ class SACWrapper:
             log_network_params(self.policy_net, self.writer, steps_done, "Policy-Net")
             log_network_params(self.critic, self.writer, steps_done, "Critic-Net")
 
-    def eval_policy(self, steps_done: int):
+    def eval_policy(self, steps_done: int, env):
         print(f"EVALUATE SAC POLICY AFTER {steps_done} STEPS")
-        env = gym.make(const.ENV_NAME)
-        env.reset()
-
         episode_returns = np.zeros(const.EVAL_EPISODE_COUNT)
+
         for episode in range(const.EVAL_EPISODE_COUNT):
             env.reset()
             observation = utils.get_pendulum_screen(env, const.IMAGE_SIZE)

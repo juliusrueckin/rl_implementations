@@ -4,7 +4,6 @@ from collections import deque
 from itertools import count
 from typing import List, Tuple
 
-import gym
 import numpy as np
 import torch
 from torch import nn
