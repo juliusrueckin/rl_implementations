@@ -31,7 +31,7 @@ def main(policy_model_path: str):
     num_actions = eval_env.action_space.n
 
     ppo_wrapper = PPOWrapper(screen_width, screen_height, num_actions, writer, policy_model_path)
-    ppo_wrapper.eval_policy(0, eval_env)
+    ppo_wrapper.eval_policy(eval_env)
 
 
 if __name__ == "__main__":

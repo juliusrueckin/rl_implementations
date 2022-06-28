@@ -1,3 +1,4 @@
+import argparse
 import copy
 import random
 from collections import deque
@@ -104,7 +105,7 @@ def collect_rollouts(
     env.close()
 
 
-def main():
+def main(resume_training_checkpoint: str = None):
     utils.set_all_seeds(100)
     writer = SummaryWriter(log_dir=const.LOG_DIR)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -115,7 +116,7 @@ def main():
     num_actions = tmp_env.action_space.n
     tmp_env.close()
 
-    ppo_wrapper = PPOWrapper(screen_width, screen_height, num_actions, writer)
+    ppo_wrapper = PPOWrapper(screen_width, screen_height, num_actions, writer, None, resume_training_checkpoint)
 
     batch_memory_queue = mp.Queue()
     trainer_events = [mp.Event() for _ in range(const.NUM_ENVS)]
@@ -142,10 +143,7 @@ def main():
         actor_process.start()
         actor_processes.append(actor_process)
 
-    finished_episodes = 0
-    total_steps_done = 0
-
-    while finished_episodes < const.NUM_EPISODES:
+    while ppo_wrapper.finished_episodes < const.NUM_EPISODES:
         rollout_data = batch_memory_queue.get(block=True)
         state, action, policy, reward, done = rollout_data["transition"]
         env_id = rollout_data["env_id"]
@@ -161,26 +159,23 @@ def main():
         )
 
         if done:
-            finished_episodes += 1
-            ppo_wrapper.episode_terminated(rollout_data["return"], finished_episodes)
+            ppo_wrapper.finished_episodes += 1
+            ppo_wrapper.episode_terminated(rollout_data["return"])
 
         del rollout_data, state, action, policy, reward, done, env_id, last_value
-        total_steps_done += 1
+        ppo_wrapper.total_steps_done += 1
 
         if len(ppo_wrapper.batch_memory) % (const.HORIZON * const.NUM_ENVS) == 0 and len(ppo_wrapper.batch_memory) > 0:
-            print(f"OPTIMIZE MODEL at STEP {total_steps_done}")
-            ppo_wrapper.optimize_model(total_steps_done)
-            ppo_wrapper.update_networks()
-            ppo_wrapper.batch_memory.clear()
+            ppo_wrapper.optimize_model()
 
             for trainer_event in trainer_events:
                 trainer_event.set()
 
-        if total_steps_done % const.EVAL_FREQUENCY == 0 and finished_episodes > 0:
+        if ppo_wrapper.total_steps_done % const.EVAL_FREQUENCY == 0 and ppo_wrapper.finished_episodes > 0:
             for eval_event in eval_events:
                 eval_event.set()
 
-            ppo_wrapper.eval_policy(total_steps_done, utils.make_env(100, const.ENV_NAME))
+            ppo_wrapper.eval_policy(utils.make_env(100, const.ENV_NAME))
 
             for eval_event in eval_events:
                 eval_event.clear()
@@ -191,4 +186,9 @@ def main():
 
 if __name__ == "__main__":
     mp.set_start_method("spawn")
-    main()
+
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--resume_training", type=str, default=None)
+    parser_args = parser.parse_args()
+
+    main(parser_args.resume_training)

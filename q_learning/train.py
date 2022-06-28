@@ -156,7 +156,7 @@ def main(resume_training_checkpoint: str = None):
                 device,
                 int(const.NUM_EPISODES / const.NUM_ENVS) + 1,
                 num_actions,
-                deep_q_learning_wrapper.total_steps_done,
+                deep_q_learning_wrapper.total_steps_done // const.NUM_ENVS,
             ),
             daemon=True,
         )

@@ -25,6 +25,7 @@ class PPOWrapper:
         num_actions: int,
         writer: SummaryWriter = None,
         policy_net_checkpoint: str = None,
+        resume_training_checkpoint: str = None,
     ):
         self.num_actions = num_actions
         self.writer = writer
@@ -83,9 +84,62 @@ class PPOWrapper:
         self.episode_returns = deque([], maxlen=const.EPISODES_PATIENCE)
         self.max_mean_episode_return = -np.inf
 
-    def episode_terminated(self, episode_return: float, episodes_done: int):
-        self.writer.add_scalar("Training/EpisodeReturn", episode_return, episodes_done)
+        self.finished_episodes = 0
+        self.total_steps_done = 0
+        self.resume_training_checkpoint = resume_training_checkpoint
+
+        if resume_training_checkpoint is not None:
+            self.resume_training()
+
+    def resume_training(self):
+        if not os.path.exists(self.resume_training_checkpoint):
+            raise ValueError(f"Checkpoint file '{self.resume_training_checkpoint}' does not exist!")
+
+        checkpoint_dir = torch.load(self.resume_training_checkpoint)
+
+        self.policy_net.load_state_dict(checkpoint_dir["policy_net_state_dict"])
+        self.policy_net_old.load_state_dict(self.policy_net.state_dict())
+        self.policy_optimizer.load_state_dict(checkpoint_dir["policy_optimizer_state_dict"])
+        self.policy_scheduler.load_state_dict(checkpoint_dir["policy_scheduler_state_dict"])
+
+        self.value_net.load_state_dict(checkpoint_dir["value_net_state_dict"])
+        self.value_net_old.load_state_dict(self.value_net.state_dict())
+        self.value_optimizer.load_state_dict(checkpoint_dir["value_optimizer_state_dict"])
+        self.value_scheduler.load_state_dict(checkpoint_dir["value_scheduler_state_dict"])
+
+        self.episode_returns = checkpoint_dir["episode_returns"]
+        self.max_mean_episode_return = checkpoint_dir["max_mean_episode_return"]
+        self.finished_episodes = checkpoint_dir["finished_episodes"]
+        self.total_steps_done = checkpoint_dir["total_steps_done"]
+
+        print(
+            f"RESUME TRAINING FROM {self.resume_training_checkpoint} CHECKPOINT WITH "
+            f"{self.total_steps_done} STEPS AND {self.finished_episodes} EPISODES"
+        )
+
+    def save_training(self):
+        save_training_path = os.path.join(const.LOG_DIR, "ppo_checkpoint.pth")
+        checkpoint_dir = {
+            "policy_net_state_dict": self.policy_net.state_dict(),
+            "policy_optimizer_state_dict": self.policy_optimizer.state_dict(),
+            "policy_scheduler_state_dict": self.policy_scheduler.state_dict(),
+            "value_net_state_dict": self.value_net.state_dict(),
+            "value_optimizer_state_dict": self.value_optimizer.state_dict(),
+            "value_scheduler_state_dict": self.value_scheduler.state_dict(),
+            "finished_episodes": self.finished_episodes,
+            "total_steps_done": self.total_steps_done,
+            "episode_returns": self.episode_returns,
+            "max_mean_episode_return": self.max_mean_episode_return,
+        }
+        torch.save(checkpoint_dir, save_training_path)
+
+    def episode_terminated(self, episode_return: float):
+        self.writer.add_scalar("Training/EpisodeReturn", episode_return, self.finished_episodes)
         self.episode_returns.append(episode_return)
+
+        if self.finished_episodes % const.CHECKPOINT_FREQUENCY == 0:
+            self.save_training()
+
         running_mean_return = sum(self.episode_returns) / len(self.episode_returns)
         if len(self.episode_returns) >= const.EPISODES_PATIENCE and running_mean_return > self.max_mean_episode_return:
             self.max_mean_episode_return = running_mean_return
@@ -143,9 +197,10 @@ class PPOWrapper:
 
         return state_batch, action_batch, policy_batch, reward_batch, advantage_batch, return_batch
 
-    def optimize_model(self, steps_done: int):
+    def optimize_model(self):
+        print(f"OPTIMIZE MODEL at STEP {self.total_steps_done}")
         for _ in range(const.NUM_EPOCHS):
-            clip_epsilon = schedule_clip_epsilon(const.CLIP_EPSILON, steps_done, const.NUM_EPISODES)
+            clip_epsilon = schedule_clip_epsilon(const.CLIP_EPSILON, self.total_steps_done, const.NUM_EPISODES)
             batches = self.batch_memory.get(self.value_net, self.device)
 
             for batch in batches:
@@ -183,9 +238,11 @@ class PPOWrapper:
                 self.value_optimizer.step()
                 self.value_scheduler.step()
 
+        self.update_networks()
+        self.batch_memory.clear()
+
         if self.writer:
             self.track_tensorboard_metrics(
-                steps_done,
                 policy_loss,
                 value_loss,
                 value_target_batch,
@@ -199,7 +256,6 @@ class PPOWrapper:
 
     def track_tensorboard_metrics(
         self,
-        steps_done: int,
         policy_loss: float,
         value_loss: float,
         value_targets: torch.tensor,
@@ -210,43 +266,47 @@ class PPOWrapper:
         explained_var: float,
         clip_epsilon: float,
     ):
-        self.writer.add_scalar("Hyperparam/Epsilon", clip_epsilon, steps_done)
-        self.writer.add_scalar("Hyperparam/Learning-Rate", learning_rate, steps_done)
+        self.writer.add_scalar("Hyperparam/Epsilon", clip_epsilon, self.total_steps_done)
+        self.writer.add_scalar("Hyperparam/Learning-Rate", learning_rate, self.total_steps_done)
 
-        self.writer.add_scalar("Training/Explained-Variance", explained_var, steps_done)
-        self.writer.add_scalar("Training/Policy-Entropy", entropy, steps_done)
-        self.writer.add_scalar("Training/Policy-Loss", policy_loss, steps_done)
-        self.writer.add_scalar("Training/Value-Loss", value_loss, steps_done)
-        self.writer.add_scalar("Training/Value-Target", value_targets.mean(), steps_done)
-        self.writer.add_scalar("Training/Value-Estimation", estimated_values.mean(), steps_done)
-        self.writer.add_scalar("Training/Advantage-Estimation", estimated_advantages.mean(), steps_done)
+        self.writer.add_scalar("Training/Explained-Variance", explained_var, self.total_steps_done)
+        self.writer.add_scalar("Training/Policy-Entropy", entropy, self.total_steps_done)
+        self.writer.add_scalar("Training/Policy-Loss", policy_loss, self.total_steps_done)
+        self.writer.add_scalar("Training/Value-Loss", value_loss, self.total_steps_done)
+        self.writer.add_scalar("Training/Value-Target", value_targets.mean(), self.total_steps_done)
+        self.writer.add_scalar("Training/Value-Estimation", estimated_values.mean(), self.total_steps_done)
+        self.writer.add_scalar("Training/Advantage-Estimation", estimated_advantages.mean(), self.total_steps_done)
 
         total_grad_norm = 0
         for params in self.policy_net.parameters():
             if params.grad is not None:
                 total_grad_norm += params.grad.data.norm(2).item()
 
-        self.writer.add_scalar(f"Training/Policy-GradNorm", total_grad_norm, steps_done)
+        self.writer.add_scalar(f"Training/Policy-GradNorm", total_grad_norm, self.total_steps_done)
 
         total_grad_norm = 0
         for params in self.value_net.parameters():
             if params.grad is not None:
                 total_grad_norm += params.grad.data.norm(2).item()
 
-        self.writer.add_scalar(f"Training/Value-GradNorm", total_grad_norm, steps_done)
+        self.writer.add_scalar(f"Training/Value-GradNorm", total_grad_norm, self.total_steps_done)
 
-        if steps_done % 500 == 0:
+        if self.total_steps_done % 1000 == 0:
             for tag, params in self.policy_net.named_parameters():
                 if params.grad is not None:
-                    self.writer.add_histogram(f"Policy-Parameters/{tag}", params.data.cpu().numpy(), steps_done)
+                    self.writer.add_histogram(
+                        f"Policy-Parameters/{tag}", params.data.cpu().numpy(), self.total_steps_done
+                    )
 
-        if steps_done % 500 == 0:
+        if self.total_steps_done % 1000 == 0:
             for tag, params in self.value_net.named_parameters():
                 if params.grad is not None:
-                    self.writer.add_histogram(f"Value-Parameters/{tag}", params.data.cpu().numpy(), steps_done)
+                    self.writer.add_histogram(
+                        f"Value-Parameters/{tag}", params.data.cpu().numpy(), self.total_steps_done
+                    )
 
-    def eval_policy(self, steps_done: int, env):
-        print(f"EVALUATE PPO POLICY AFTER {steps_done} STEPS")
+    def eval_policy(self, env):
+        print(f"EVALUATE PPO POLICY AFTER {self.total_steps_done} STEPS")
         episode_returns = np.zeros(const.EVAL_EPISODE_COUNT)
 
         for episode in range(const.EVAL_EPISODE_COUNT):
@@ -296,6 +356,6 @@ class PPOWrapper:
                 state_tensor = next_state_tensor
                 state = next_state.copy()
 
-        self.writer.add_scalar("Eval/EpisodeReturn", np.mean(episode_returns), steps_done)
+        self.writer.add_scalar("Eval/EpisodeReturn", np.mean(episode_returns), self.total_steps_done)
         env.render()
         env.close()
