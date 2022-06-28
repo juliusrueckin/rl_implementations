@@ -1,3 +1,4 @@
+import argparse
 import copy
 import random
 from collections import deque
@@ -20,11 +21,12 @@ def collect_rollouts(
     learner_event: mp.Event,
     device: torch.device,
     num_episodes: int,
+    current_steps_done: int = 0,
 ):
     utils.set_all_seeds(actor_id)
+    steps_done = copy.deepcopy(current_steps_done)
     local_policy_net = copy.deepcopy(shared_policy_net).to(device)
     env = utils.make_env(actor_id, const.ENV_NAME)
-    steps_done = 0
 
     for episode in range(num_episodes):
         env.reset()
@@ -107,7 +109,7 @@ def collect_rollouts(
     env.close()
 
 
-def main():
+def main(resume_training_checkpoint: str = None):
     utils.set_all_seeds(100)
     writer = SummaryWriter(log_dir=const.LOG_DIR)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -119,7 +121,9 @@ def main():
     action_limits = torch.from_numpy(tmp_env.action_space.high).to(device=device)
     tmp_env.close()
 
-    sac_wrapper = SACWrapper(screen_width, screen_height, action_dim, action_limits, writer=writer)
+    sac_wrapper = SACWrapper(
+        screen_width, screen_height, action_dim, action_limits, writer, None, resume_training_checkpoint
+    )
 
     replay_buffer_queue = mp.Queue()
     learner_events = [mp.Event() for _ in range(const.NUM_ENVS)]
@@ -135,16 +139,14 @@ def main():
                 learner_events[env_id],
                 device,
                 int(const.NUM_EPISODES / const.NUM_ENVS) + 1,
+                sac_wrapper.total_steps_done // const.NUM_ENVS,
             ),
             daemon=True,
         )
         actor_process.start()
         actor_processes.append(actor_process)
 
-    finished_episodes = 0
-    total_steps_done = 0
-
-    while finished_episodes < const.NUM_EPISODES:
+    while sac_wrapper.finished_episodes < const.NUM_EPISODES:
         rollout_data = replay_buffer_queue.get(block=True)
         if rollout_data["transition"] is not None:
             state, action, next_state, reward, done = rollout_data["transition"]
@@ -158,32 +160,35 @@ def main():
             )
 
             if done.item():
-                finished_episodes += 1
-                sac_wrapper.episode_terminated(rollout_data["return"], finished_episodes)
+                sac_wrapper.finished_episodes += 1
+                sac_wrapper.episode_terminated(rollout_data["return"])
 
             del rollout_data, state, action, next_state, reward, done
         else:
-            finished_episodes += 1
-            sac_wrapper.episode_terminated(rollout_data["return"], finished_episodes)
+            sac_wrapper.finished_episodes += 1
+            sac_wrapper.episode_terminated(rollout_data["return"])
 
             del rollout_data
 
-        total_steps_done += 1
+        sac_wrapper.total_steps_done += 1
 
-        if total_steps_done % const.EVAL_FREQUENCY == 0 and finished_episodes > 0:
+        if sac_wrapper.total_steps_done % const.EVAL_FREQUENCY == 0 and sac_wrapper.finished_episodes > 0:
             for learner_event in learner_events:
                 learner_event.set()
 
-            sac_wrapper.eval_policy(total_steps_done, utils.make_env(100, const.ENV_NAME))
+            sac_wrapper.eval_policy(utils.make_env(100, const.ENV_NAME))
 
             for learner_event in learner_events:
                 learner_event.clear()
 
-        if total_steps_done >= const.MIN_START_STEPS and total_steps_done % const.OPTIMIZATION_UPDATE == 0:
+        if (
+            sac_wrapper.total_steps_done >= const.MIN_START_STEPS
+            and sac_wrapper.total_steps_done % const.OPTIMIZATION_UPDATE == 0
+        ):
             for learner_event in learner_events:
                 learner_event.set()
 
-            sac_wrapper.optimize_model(total_steps_done)
+            sac_wrapper.optimize_model()
 
             for learner_event in learner_events:
                 learner_event.clear()
@@ -191,4 +196,9 @@ def main():
 
 if __name__ == "__main__":
     mp.set_start_method("spawn")
-    main()
+
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--resume_training", type=str, default=None)
+    parser_args = parser.parse_args()
+
+    main(parser_args.resume_training)

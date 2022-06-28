@@ -36,6 +36,7 @@ class SACWrapper:
         action_limits: torch.tensor,
         writer: SummaryWriter = None,
         policy_net_checkpoint: str = None,
+        resume_training_checkpoint: str = None,
     ):
         self.value_stats = ValueStats()
         self.num_actions = num_actions
@@ -93,9 +94,6 @@ class SACWrapper:
         self.policy_optimizer = torch.optim.Adam(self.policy_net.parameters(), lr=const.POLICY_LEARNING_RATE)
         self.critic_optimizer = torch.optim.Adam(self.critic.parameters(), lr=const.Q_VALUE_LEARNING_RATE)
 
-        self.episode_returns = deque([], maxlen=const.EPISODES_PATIENCE)
-        self.max_mean_episode_return = -np.inf
-
         self.log_entropy_coeff = torch.log(torch.ones(1, device=self.device) * const.INIT_ENTROPY_COEFF).requires_grad_(
             True
         )
@@ -107,11 +105,78 @@ class SACWrapper:
             self.encoder_optimizer = torch.optim.Adam(self.critic.encoder.parameters(), lr=const.ENCODER_LEARNING_RATE)
             self.curl_optimizer = torch.optim.Adam([self.curl.W], lr=const.ENCODER_LEARNING_RATE)
 
-    def episode_terminated(self, episode_return: float, steps_done: int):
-        self.writer.add_scalar("EpisodeReturn/Training", episode_return, steps_done)
-        self.episode_returns.append(episode_return)
-        running_mean_return = sum(self.episode_returns) / len(self.episode_returns)
+        self.episode_returns = deque([], maxlen=const.EPISODES_PATIENCE)
+        self.max_mean_episode_return = -np.inf
 
+        self.finished_episodes = 0
+        self.total_steps_done = 0
+        self.resume_training_checkpoint = resume_training_checkpoint
+
+        if resume_training_checkpoint is not None:
+            self.resume_training()
+
+    def resume_training(self):
+        if not os.path.exists(self.resume_training_checkpoint):
+            raise ValueError(f"Checkpoint file '{self.resume_training_checkpoint}' does not exist!")
+
+        checkpoint_dir = torch.load(self.resume_training_checkpoint)
+
+        self.replay_buffer.load_state_dict(checkpoint_dir["replay_buffer_state_dict"])
+        self.policy_net.load_state_dict(checkpoint_dir["policy_net_state_dict"])
+        self.policy_optimizer.load_state_dict(checkpoint_dir["policy_optimizer_state_dict"])
+        self.critic.load_state_dict(checkpoint_dir["critic_state_dict"])
+        self.target_critic.load_state_dict(checkpoint_dir["target_critic_state_dict"])
+        self.critic_optimizer.load_state_dict(checkpoint_dir["critic_optimizer_state_dict"])
+        self.entropy_coeff_optimizer.load_state_dict(checkpoint_dir["entropy_coeff_optimizer_state_dict"])
+
+        if const.USE_CURL:
+            self.curl.load_state_dict(checkpoint_dir["curl_state_dict"])
+            self.curl_optimizer.load_state_dict(checkpoint_dir["curl_optimizer_state_dict"])
+            self.encoder_optimizer.load_state_dict(checkpoint_dir["encoder_optimizer_state_dict"])
+
+        self.log_entropy_coeff = checkpoint_dir["log_entropy_coeff"]
+        self.episode_returns = checkpoint_dir["episode_returns"]
+        self.max_mean_episode_return = checkpoint_dir["max_mean_episode_return"]
+        self.finished_episodes = checkpoint_dir["finished_episodes"]
+        self.total_steps_done = checkpoint_dir["total_steps_done"]
+
+        print(
+            f"RESUME TRAINING FROM {self.resume_training_checkpoint} CHECKPOINT WITH "
+            f"{self.total_steps_done} STEPS AND {self.finished_episodes} EPISODES"
+        )
+
+    def save_training(self):
+        checkpoint_dir = {
+            "replay_buffer_state_dict": self.replay_buffer.state_dict(),
+            "policy_net_state_dict": self.policy_net.state_dict(),
+            "policy_optimizer_state_dict": self.policy_optimizer.state_dict(),
+            "critic_state_dict": self.critic.state_dict(),
+            "target_critic_state_dict": self.target_critic.state_dict(),
+            "critic_optimizer_state_dict": self.critic_optimizer.state_dict(),
+            "entropy_coeff_optimizer_state_dict": self.entropy_coeff_optimizer.state_dict(),
+            "log_entropy_coeff": self.log_entropy_coeff,
+            "finished_episodes": self.finished_episodes,
+            "total_steps_done": self.total_steps_done,
+            "episode_returns": self.episode_returns,
+            "max_mean_episode_return": self.max_mean_episode_return,
+        }
+
+        if const.USE_CURL:
+            checkpoint_dir["curl_state_dict"] = self.curl.state_dict()
+            checkpoint_dir["curl_optimizer_state_dict"] = self.curl_optimizer.state_dict()
+            checkpoint_dir["encoder_optimizer_state_dict"] = self.encoder_optimizer.state_dict()
+
+        save_training_path = os.path.join(const.LOG_DIR, "sac_checkpoint.pth")
+        torch.save(checkpoint_dir, save_training_path)
+
+    def episode_terminated(self, episode_return: float):
+        self.writer.add_scalar("EpisodeReturn/Training", episode_return, self.total_steps_done)
+        self.episode_returns.append(episode_return)
+
+        if self.finished_episodes % const.CHECKPOINT_FREQUENCY == 0:
+            self.save_training()
+
+        running_mean_return = sum(self.episode_returns) / len(self.episode_returns)
         if len(self.episode_returns) >= const.EPISODES_PATIENCE and running_mean_return > self.max_mean_episode_return:
             self.max_mean_episode_return = running_mean_return
             best_model_file_path = os.path.join(const.LOG_DIR, "best_policy_net.pth")
@@ -314,7 +379,7 @@ class SACWrapper:
 
         self.policy_net.encoder.load_state_dict(self.critic.encoder.state_dict())
 
-    def optimize_model(self, steps_done: int):
+    def optimize_model(self):
         for _ in range(const.NUM_GRADIENT_STEPS):
             (
                 state_batch,
@@ -347,7 +412,7 @@ class SACWrapper:
 
             policy_loss = self.optimize_actor(state_batch, new_action_batch, log_prob_batch, entropy_coeff)
 
-            if steps_done % const.TARGET_UPDATE == 0:
+            if self.total_steps_done % const.TARGET_UPDATE == 0:
                 self.update_target_networks()
 
             if const.USE_CURL:
@@ -355,7 +420,6 @@ class SACWrapper:
 
         if self.writer:
             self.track_tensorboard_metrics(
-                steps_done,
                 policy_loss,
                 q_value_loss,
                 q1_values,
@@ -368,7 +432,6 @@ class SACWrapper:
 
     def track_tensorboard_metrics(
         self,
-        steps_done: int,
         policy_loss: float,
         q_value_loss: float,
         estimated_q_values: torch.tensor,
@@ -378,28 +441,28 @@ class SACWrapper:
         entropy_coeff: float,
         entropy_coeff_loss: float,
     ):
-        self.writer.add_scalar(f"Policy/Entropy", policy.entropy().mean(), steps_done)
-        self.writer.add_scalar(f"Policy/Entropy-Coefficient", entropy_coeff, steps_done)
-        self.writer.add_scalar(f"Policy/Entropy-Coefficient-Loss", entropy_coeff_loss, steps_done)
+        self.writer.add_scalar(f"Policy/Entropy", policy.entropy().mean(), self.total_steps_done)
+        self.writer.add_scalar(f"Policy/Entropy-Coefficient", entropy_coeff, self.total_steps_done)
+        self.writer.add_scalar(f"Policy/Entropy-Coefficient-Loss", entropy_coeff_loss, self.total_steps_done)
 
-        self.writer.add_scalar(f"Policy/Mean", policy.base_dist.loc.mean(), steps_done)
-        self.writer.add_scalar(f"Policy/Std", policy.base_dist.scale.mean(), steps_done)
-        self.writer.add_scalar("Policy/Loss", policy_loss, steps_done)
+        self.writer.add_scalar(f"Policy/Mean", policy.base_dist.loc.mean(), self.total_steps_done)
+        self.writer.add_scalar(f"Policy/Std", policy.base_dist.scale.mean(), self.total_steps_done)
+        self.writer.add_scalar("Policy/Loss", policy_loss, self.total_steps_done)
 
-        self.writer.add_scalar("Q-Value/Loss", q_value_loss, steps_done)
-        self.writer.add_scalar("Q-Value/1-Estimation", estimated_q_values.mean(), steps_done)
-        self.writer.add_scalar("Q-Value/Target", target_q_values.mean(), steps_done)
-        self.writer.add_scalar("Q-Value/Explained-Variance", explained_var, steps_done)
+        self.writer.add_scalar("Q-Value/Loss", q_value_loss, self.total_steps_done)
+        self.writer.add_scalar("Q-Value/1-Estimation", estimated_q_values.mean(), self.total_steps_done)
+        self.writer.add_scalar("Q-Value/Target", target_q_values.mean(), self.total_steps_done)
+        self.writer.add_scalar("Q-Value/Explained-Variance", explained_var, self.total_steps_done)
 
-        self.writer.add_scalar(f"Policy/GradNorm", compute_grad_norm(self.policy_net), steps_done)
-        self.writer.add_scalar(f"Q-Value/GradNorm", compute_grad_norm(self.critic), steps_done)
+        self.writer.add_scalar(f"Policy/GradNorm", compute_grad_norm(self.policy_net), self.total_steps_done)
+        self.writer.add_scalar(f"Q-Value/GradNorm", compute_grad_norm(self.critic), self.total_steps_done)
 
-        if steps_done % 500 == 0:
-            log_network_params(self.policy_net, self.writer, steps_done, "Policy-Net")
-            log_network_params(self.critic, self.writer, steps_done, "Critic-Net")
+        if self.total_steps_done % 1000 == 0:
+            log_network_params(self.policy_net, self.writer, self.total_steps_done, "Policy-Net")
+            log_network_params(self.critic, self.writer, self.total_steps_done, "Critic-Net")
 
-    def eval_policy(self, steps_done: int, env):
-        print(f"EVALUATE SAC POLICY AFTER {steps_done} STEPS")
+    def eval_policy(self, env):
+        print(f"EVALUATE SAC POLICY AFTER {self.total_steps_done} STEPS")
         episode_returns = np.zeros(const.EVAL_EPISODE_COUNT)
 
         for episode in range(const.EVAL_EPISODE_COUNT):
@@ -430,7 +493,7 @@ class SACWrapper:
 
                     continue
 
-                if steps_done < const.MIN_START_STEPS:
+                if self.total_steps_done < const.MIN_START_STEPS:
                     u = torch.from_numpy(env.action_space.sample()).to(self.device)
                 else:
                     _, u = self.policy_net.get_action(
@@ -453,6 +516,6 @@ class SACWrapper:
                 state_tensor = next_state_tensor
                 state = next_state.copy()
 
-        self.writer.add_scalar("EpisodeReturn/Eval", np.mean(episode_returns), steps_done)
+        self.writer.add_scalar("EpisodeReturn/Eval", np.mean(episode_returns), self.total_steps_done)
         env.render()
         env.close()
