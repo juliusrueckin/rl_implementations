@@ -170,6 +170,7 @@ class SACWrapper:
         torch.save(checkpoint_dir, save_training_path)
 
     def episode_terminated(self, episode_return: float):
+        self.finished_episodes += 1
         self.writer.add_scalar("EpisodeReturn/Training", episode_return, self.total_steps_done)
         self.episode_returns.append(episode_return)
 

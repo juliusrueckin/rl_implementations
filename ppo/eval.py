@@ -1,19 +1,11 @@
 import argparse
 import os
 
-import gym
 from torch.utils.tensorboard import SummaryWriter
 
 import q_learning_constants as const
 from ppo.ppo_wrappers import PPOWrapper
 from utils import utils
-
-
-def make_env(env_id: int):
-    env = gym.make(const.ENV_NAME)
-    env.seed(env_id)
-    env.reset()
-    return env
 
 
 def main(policy_model_path: str):
@@ -25,7 +17,7 @@ def main(policy_model_path: str):
     utils.set_all_seeds(100)
     writer = SummaryWriter(log_dir=const.LOG_DIR)
 
-    eval_env = make_env(100)
+    eval_env = utils.make_env(100, const.ENV_NAME)
     init_screen = utils.get_cartpole_screen(eval_env, const.INPUT_SIZE)
     _, screen_height, screen_width = init_screen.shape
     num_actions = eval_env.action_space.n

@@ -160,12 +160,10 @@ def main(resume_training_checkpoint: str = None):
             )
 
             if done.item():
-                sac_wrapper.finished_episodes += 1
                 sac_wrapper.episode_terminated(rollout_data["return"])
 
             del rollout_data, state, action, next_state, reward, done
         else:
-            sac_wrapper.finished_episodes += 1
             sac_wrapper.episode_terminated(rollout_data["return"])
 
             del rollout_data

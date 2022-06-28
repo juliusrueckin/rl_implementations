@@ -159,7 +159,6 @@ def main(resume_training_checkpoint: str = None):
         )
 
         if done:
-            ppo_wrapper.finished_episodes += 1
             ppo_wrapper.episode_terminated(rollout_data["return"])
 
         del rollout_data, state, action, policy, reward, done, env_id, last_value
