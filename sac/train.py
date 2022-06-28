@@ -21,6 +21,7 @@ def collect_rollouts(
     device: torch.device,
     num_episodes: int,
 ):
+    utils.set_all_seeds(actor_id)
     local_policy_net = copy.deepcopy(shared_policy_net).to(device)
     env = utils.make_env(actor_id, const.ENV_NAME)
     steps_done = 0
@@ -107,6 +108,7 @@ def collect_rollouts(
 
 
 def main():
+    utils.set_all_seeds(100)
     writer = SummaryWriter(log_dir=const.LOG_DIR)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 

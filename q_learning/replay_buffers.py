@@ -19,6 +19,12 @@ class ReplayBuffer:
         self.beta = 1
         self.gamma = gamma
 
+    def load_state_dict(self, checkpoint_dir: Dict):
+        raise NotImplementedError("Replay buffer does not implement 'load_state_dict()' method!")
+
+    def state_dict(self) -> Dict:
+        raise NotImplementedError("Replay buffer does not implement 'state_dict()' method!")
+
     def step(self):
         pass
 
@@ -90,6 +96,16 @@ class ExperienceReplay(ReplayBuffer):
     ):
         super().__init__(buffer_length, batch_size, n_steps, gamma, num_envs)
 
+    def load_state_dict(self, checkpoint_dir: Dict):
+        self.n_step_buffer = checkpoint_dir["n_step_buffer"]
+        self.buffer = checkpoint_dir["buffer"]
+
+    def state_dict(self) -> Dict:
+        return {
+            "n_step_buffer": self.n_step_buffer,
+            "buffer": self.buffer,
+        }
+
     def sample(self) -> Tuple[List, np.array, np.array]:
         sample_indices = np.random.choice(list(self.buffer_flattened.keys()), size=self.batch_size)
         sample_transitions = [self.buffer_flattened[idx][2] for idx in sample_indices]
@@ -145,6 +161,20 @@ class PrioritizedExperienceReplay(ReplayBuffer):
         self.beta = beta0
         self.priorities = {env_id: deque([], maxlen=buffer_length) for env_id in range(num_envs)}
         self.total_steps = (buffer_length // batch_size) * replay_delay
+
+    def load_state_dict(self, checkpoint_dir: Dict):
+        self.beta = checkpoint_dir["beta"]
+        self.n_step_buffer = checkpoint_dir["n_step_buffer"]
+        self.buffer = checkpoint_dir["buffer"]
+        self.priorities = checkpoint_dir["priorities"]
+
+    def state_dict(self) -> Dict:
+        return {
+            "beta": self.beta,
+            "n_step_buffer": self.n_step_buffer,
+            "buffer": self.buffer,
+            "priorities": self.priorities,
+        }
 
     def step(self):
         self.beta = np.minimum(self.beta + (1 - self.beta0) / self.total_steps, 1)

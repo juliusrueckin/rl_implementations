@@ -39,7 +39,7 @@ def main(policy_model_path: str):
         writer,
         policy_model_path,
     )
-    deep_q_learning_wrapper.eval_policy(0, eval_env)
+    deep_q_learning_wrapper.eval_policy(eval_env)
 
 
 if __name__ == "__main__":

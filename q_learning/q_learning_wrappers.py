@@ -24,6 +24,7 @@ class DeepQLearningBaseWrapper:
         network_name: str,
         writer: SummaryWriter = None,
         policy_net_checkpoint: str = None,
+        resume_training_checkpoint: str = None,
     ):
         self.num_actions = num_actions
         self.writer = writer
@@ -56,6 +57,8 @@ class DeepQLearningBaseWrapper:
         if policy_net_checkpoint is not None:
             self.policy_net.load_state_dict(torch.load(policy_net_checkpoint, map_location=self.device))
 
+        self.policy_net_eval = None
+
         self.target_net = get_network(
             network_name,
             screen_width,
@@ -76,9 +79,56 @@ class DeepQLearningBaseWrapper:
         self.episode_returns = deque([], maxlen=const.EPISODES_PATIENCE)
         self.max_mean_episode_return = -np.inf
 
-    def episode_terminated(self, episode_return: float, steps_done: int):
-        self.writer.add_scalar("Training/EpisodeReturn", episode_return, steps_done)
+        self.finished_episodes = 0
+        self.total_steps_done = 0
+        self.resume_training_checkpoint = resume_training_checkpoint
+
+    def resume_training(self):
+        if not os.path.exists(self.resume_training_checkpoint):
+            raise ValueError(f"Checkpoint file '{self.resume_training_checkpoint}' does not exist!")
+
+        checkpoint_dir = torch.load(self.resume_training_checkpoint)
+
+        self.replay_buffer.load_state_dict(checkpoint_dir["replay_buffer_state_dict"])
+        self.policy_net.load_state_dict(checkpoint_dir["policy_net_state_dict"])
+        self.target_net.load_state_dict(checkpoint_dir["target_net_state_dict"])
+        self.optimizer.load_state_dict(checkpoint_dir["optimizer_state_dict"])
+        if self.policy_net_eval is not None:
+            self.policy_net_eval.load_state_dict(checkpoint_dir["policy_net_eval_state_dict"])
+
+        self.episode_returns = checkpoint_dir["episode_returns"]
+        self.max_mean_episode_return = checkpoint_dir["max_mean_episode_return"]
+        self.finished_episodes = checkpoint_dir["finished_episodes"]
+        self.total_steps_done = checkpoint_dir["total_steps_done"]
+
+        print(
+            f"RESUME TRAINING FROM {self.resume_training_checkpoint} CHECKPOINT WITH "
+            f"{self.total_steps_done} STEPS AND {self.finished_episodes} EPISODES"
+        )
+
+    def save_training(self):
+        save_training_path = os.path.join(const.LOG_DIR, "q_learning_checkpoint.pth")
+        checkpoint_dir = {
+            "replay_buffer_state_dict": self.replay_buffer.state_dict(),
+            "policy_net_state_dict": self.policy_net.state_dict(),
+            "policy_net_eval_state_dict": None if self.policy_net_eval is None else self.policy_net_eval.state_dict(),
+            "target_net_state_dict": self.target_net.state_dict(),
+            "optimizer_state_dict": self.optimizer.state_dict(),
+            "finished_episodes": self.finished_episodes,
+            "total_steps_done": self.total_steps_done,
+            "episode_returns": self.episode_returns,
+            "max_mean_episode_return": self.max_mean_episode_return,
+        }
+        torch.save(checkpoint_dir, save_training_path)
+
+    def episode_terminated(self, episode_return: float):
+        self.finished_episodes += 1
+        self.writer.add_scalar("Training/EpisodeReturn", episode_return, self.finished_episodes)
         self.episode_returns.append(episode_return)
+
+        if self.finished_episodes % const.CHECKPOINT_FREQUENCY == 0:
+            self.save_training()
+
         running_mean_return = sum(self.episode_returns) / len(self.episode_returns)
         if len(self.episode_returns) >= const.EPISODES_PATIENCE and running_mean_return > self.max_mean_episode_return:
             self.max_mean_episode_return = running_mean_return
@@ -194,7 +244,7 @@ class DeepQLearningBaseWrapper:
 
         return weighted_loss
 
-    def optimize_model(self, steps_done: int = None):
+    def optimize_model(self):
         for _ in range(const.NUM_GRADIENT_STEPS):
             (
                 state_batch,
@@ -210,12 +260,11 @@ class DeepQLearningBaseWrapper:
             td_targets, next_state_action_values = self.get_td_targets(reward_batch, next_state_batch, done_batch)
             weighted_loss = self.optimization_step(estimated_q_values, td_targets, weights, indices)
 
-        if steps_done % const.TARGET_UPDATE == 0:
+        if self.total_steps_done % const.TARGET_UPDATE == 0:
             self.update_target_network()
 
         if self.writer:
             self.track_tensorboard_metrics(
-                steps_done,
                 weighted_loss,
                 td_targets if const.NUM_ATOMS == 1 else self.get_expected_values(td_targets),
                 estimated_q_values if const.NUM_ATOMS == 1 else self.get_expected_values(estimated_q_values),
@@ -229,7 +278,6 @@ class DeepQLearningBaseWrapper:
 
     def track_tensorboard_metrics(
         self,
-        steps_done: int,
         loss: int,
         td_targets: torch.tensor,
         estimated_q_values: torch.tensor,
@@ -239,35 +287,37 @@ class DeepQLearningBaseWrapper:
     ):
         self.writer.add_scalar(
             "Hyperparam/Epsilon",
-            utils.schedule_epsilon(steps_done, const.NOISY_NETS, const.EPS_START, const.EPS_END, const.EPS_DECAY),
-            steps_done,
+            utils.schedule_epsilon(
+                self.total_steps_done, const.NOISY_NETS, const.EPS_START, const.EPS_END, const.EPS_DECAY
+            ),
+            self.total_steps_done,
         )
 
-        self.writer.add_scalar("Training/Loss", loss, steps_done)
-        self.writer.add_scalar("Hyperparam/Beta", self.replay_buffer.beta, steps_done)
+        self.writer.add_scalar("Training/Loss", loss, self.total_steps_done)
+        self.writer.add_scalar("Hyperparam/Beta", self.replay_buffer.beta, self.total_steps_done)
 
-        self.writer.add_scalar("Training/TD-Target", td_targets.mean(), steps_done)
-        self.writer.add_scalar("Training/TD-Estimation", estimated_q_values.mean(), steps_done)
-        self.writer.add_histogram("OnlineNetwork/NextQValues", next_q_values, steps_done)
+        self.writer.add_scalar("Training/TD-Target", td_targets.mean(), self.total_steps_done)
+        self.writer.add_scalar("Training/TD-Estimation", estimated_q_values.mean(), self.total_steps_done)
+        self.writer.add_histogram("OnlineNetwork/NextQValues", next_q_values, self.total_steps_done)
 
         if estimated_q_value_distribution is not None and td_target_distribution is not None:
-            self.writer.add_histogram("Distributions/Q-Values", estimated_q_value_distribution, steps_done)
-            self.writer.add_histogram("Distributions/TD-Targets", td_target_distribution, steps_done)
+            self.writer.add_histogram("Distributions/Q-Values", estimated_q_value_distribution, self.total_steps_done)
+            self.writer.add_histogram("Distributions/TD-Targets", td_target_distribution, self.total_steps_done)
 
         total_grad_norm = 0
         for params in self.policy_net.parameters():
             if params.grad is not None:
                 total_grad_norm += params.grad.data.norm(2).item()
 
-        self.writer.add_scalar(f"Training/GradientNorm", total_grad_norm, steps_done)
+        self.writer.add_scalar(f"Training/GradientNorm", total_grad_norm, self.total_steps_done)
 
-        if steps_done % 500 == 0:
+        if self.total_steps_done % 1000 == 0:
             for tag, params in self.policy_net.named_parameters():
                 if params.grad is not None:
-                    self.writer.add_histogram(f"Parameters/{tag}", params.data.cpu().numpy(), steps_done)
+                    self.writer.add_histogram(f"Parameters/{tag}", params.data.cpu().numpy(), self.total_steps_done)
 
-    def eval_policy(self, steps_done: int, env):
-        print(f"EVALUATE Q-LEARNING POLICY AFTER {steps_done} STEPS")
+    def eval_policy(self, env):
+        print(f"EVALUATE Q-LEARNING POLICY AFTER {self.total_steps_done} STEPS")
         episode_returns = np.zeros(const.EVAL_EPISODE_COUNT)
 
         for episode in range(const.EVAL_EPISODE_COUNT):
@@ -299,7 +349,7 @@ class DeepQLearningBaseWrapper:
 
                 action = utils.select_action(
                     state_tensor,
-                    steps_done,
+                    self.total_steps_done,
                     self.num_actions,
                     self.policy_net,
                     self.device,
@@ -328,7 +378,7 @@ class DeepQLearningBaseWrapper:
                 state_tensor = next_state_tensor
                 state = next_state.copy()
 
-        self.writer.add_scalar("Eval/EpisodeReturn", np.mean(episode_returns), steps_done)
+        self.writer.add_scalar("Eval/EpisodeReturn", np.mean(episode_returns), self.total_steps_done)
         env.render()
         env.close()
 
@@ -342,8 +392,20 @@ class DeepQLearningWrapper(DeepQLearningBaseWrapper):
         network_name: str,
         writer: SummaryWriter = None,
         policy_net_checkpoint: str = None,
+        resume_training_checkpoint: str = None,
     ):
-        super().__init__(screen_width, screen_height, num_actions, network_name, writer, policy_net_checkpoint)
+        super().__init__(
+            screen_width,
+            screen_height,
+            num_actions,
+            network_name,
+            writer,
+            policy_net_checkpoint,
+            resume_training_checkpoint,
+        )
+
+        if resume_training_checkpoint is not None:
+            self.resume_training()
 
     def get_td_targets(
         self,
@@ -377,8 +439,17 @@ class DoubleDeepQLearningWrapper(DeepQLearningBaseWrapper):
         network_name: str,
         writer: SummaryWriter = None,
         policy_net_checkpoint: str = None,
+        resume_training_checkpoint: str = None,
     ):
-        super().__init__(screen_width, screen_height, num_actions, network_name, writer, policy_net_checkpoint)
+        super().__init__(
+            screen_width,
+            screen_height,
+            num_actions,
+            network_name,
+            writer,
+            policy_net_checkpoint,
+            resume_training_checkpoint,
+        )
 
         self.policy_net_eval = get_network(
             network_name,
@@ -394,6 +465,9 @@ class DoubleDeepQLearningWrapper(DeepQLearningBaseWrapper):
         ).to(self.device)
         self.policy_net_eval.load_state_dict(self.policy_net.state_dict())
         self.policy_net_eval.eval()
+
+        if resume_training_checkpoint is not None:
+            self.resume_training()
 
     def update_policy_net_eval(self):
         self.policy_net_eval.load_state_dict(self.policy_net.state_dict())

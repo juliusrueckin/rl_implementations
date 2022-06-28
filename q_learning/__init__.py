@@ -13,12 +13,25 @@ def get_q_learning_wrapper(
     network_name: str,
     writer: SummaryWriter = None,
     policy_net_checkpoint: str = None,
+    resume_training_checkpoint: str = None,
 ) -> Union[DeepQLearningWrapper, DoubleDeepQLearningWrapper]:
     if double_q_learning:
         return DoubleDeepQLearningWrapper(
-            screen_width, screen_height, num_actions, network_name, writer, policy_net_checkpoint
+            screen_width,
+            screen_height,
+            num_actions,
+            network_name,
+            writer,
+            policy_net_checkpoint,
+            resume_training_checkpoint,
         )
     else:
         return DeepQLearningWrapper(
-            screen_width, screen_height, num_actions, network_name, writer, policy_net_checkpoint
+            screen_width,
+            screen_height,
+            num_actions,
+            network_name,
+            writer,
+            policy_net_checkpoint,
+            resume_training_checkpoint,
         )

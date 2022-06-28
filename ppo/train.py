@@ -25,6 +25,7 @@ def collect_rollouts(
     num_actions: int,
     num_episodes: int,
 ):
+    utils.set_all_seeds(actor_id)
     local_policy_net_old = copy.deepcopy(shared_policy_net_old).to(device)
     local_value_net_old = copy.deepcopy(shared_value_net_old).to(device)
     env = utils.make_env(actor_id, const.ENV_NAME)
@@ -104,6 +105,7 @@ def collect_rollouts(
 
 
 def main():
+    utils.set_all_seeds(100)
     writer = SummaryWriter(log_dir=const.LOG_DIR)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     tmp_env = utils.make_env(100, const.ENV_NAME)
