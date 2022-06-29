@@ -127,7 +127,6 @@ class SACWrapper:
         self.critic.load_state_dict(checkpoint_dir["critic_state_dict"])
         self.target_critic.load_state_dict(checkpoint_dir["target_critic_state_dict"])
         self.critic_optimizer.load_state_dict(checkpoint_dir["critic_optimizer_state_dict"])
-        self.entropy_coeff_optimizer.load_state_dict(checkpoint_dir["entropy_coeff_optimizer_state_dict"])
 
         if const.USE_CURL:
             self.curl.load_state_dict(checkpoint_dir["curl_state_dict"])
@@ -135,6 +134,9 @@ class SACWrapper:
             self.encoder_optimizer.load_state_dict(checkpoint_dir["encoder_optimizer_state_dict"])
 
         self.log_entropy_coeff = checkpoint_dir["log_entropy_coeff"]
+        self.entropy_coeff_optimizer = torch.optim.Adam([self.log_entropy_coeff], lr=const.ENTROPY_LEARNING_RATE)
+        self.entropy_coeff_optimizer.load_state_dict(checkpoint_dir["entropy_coeff_optimizer_state_dict"])
+
         self.episode_returns = checkpoint_dir["episode_returns"]
         self.max_mean_episode_return = checkpoint_dir["max_mean_episode_return"]
         self.finished_episodes = checkpoint_dir["finished_episodes"]
@@ -171,7 +173,7 @@ class SACWrapper:
 
     def episode_terminated(self, episode_return: float):
         self.finished_episodes += 1
-        self.writer.add_scalar("EpisodeReturn/Training", episode_return, self.total_steps_done)
+        self.writer.add_scalar("EpisodeReturn/Training", episode_return, self.finished_episodes)
         self.episode_returns.append(episode_return)
 
         if self.finished_episodes % const.CHECKPOINT_FREQUENCY == 0:
