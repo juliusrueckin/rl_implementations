@@ -20,6 +20,7 @@ def collect_rollouts(
     shared_policy_net: Union[DQN, DuelingDQN],
     data_queue: mp.Queue,
     learner_event: mp.Event,
+    termination_allowed_event: mp.Event,
     device: torch.device,
     num_episodes: int,
     num_actions: int,
@@ -117,6 +118,8 @@ def collect_rollouts(
             state = next_state.copy()
 
     env.close()
+    termination_allowed_event.wait()
+    termination_allowed_event.clear()
 
 
 def main(resume_training_checkpoint: str = None):
@@ -143,6 +146,7 @@ def main(resume_training_checkpoint: str = None):
 
     replay_buffer_queue = mp.Queue()
     learner_events = [mp.Event() for _ in range(const.NUM_ENVS)]
+    termination_allowed_events = [mp.Event() for _ in range(const.NUM_ENVS)]
     actor_processes = []
 
     for env_id in range(const.NUM_ENVS):
@@ -153,6 +157,7 @@ def main(resume_training_checkpoint: str = None):
                 deep_q_learning_wrapper.policy_net,
                 replay_buffer_queue,
                 learner_events[env_id],
+                termination_allowed_events[env_id],
                 device,
                 int(const.NUM_EPISODES / const.NUM_ENVS) + 1,
                 num_actions,
@@ -182,7 +187,6 @@ def main(resume_training_checkpoint: str = None):
             del rollout_data, state, action, next_state, reward, done
         else:
             deep_q_learning_wrapper.episode_terminated(rollout_data["return"])
-
             del rollout_data
 
         deep_q_learning_wrapper.total_steps_done += 1
@@ -210,6 +214,9 @@ def main(resume_training_checkpoint: str = None):
 
             for learner_event in learner_events:
                 learner_event.clear()
+
+    for termination_allowed_event in termination_allowed_events:
+        termination_allowed_event.set()
 
 
 if __name__ == "__main__":

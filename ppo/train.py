@@ -22,6 +22,7 @@ def collect_rollouts(
     data_queue: mp.Queue,
     trainer_event: mp.Event,
     eval_event: mp.Event,
+    termination_allowed_event: mp.Event,
     device: torch.device,
     num_actions: int,
     num_episodes: int,
@@ -103,6 +104,8 @@ def collect_rollouts(
             state = next_state.copy()
 
     env.close()
+    termination_allowed_event.wait()
+    termination_allowed_event.clear()
 
 
 def main(resume_training_checkpoint: str = None):
@@ -121,6 +124,7 @@ def main(resume_training_checkpoint: str = None):
     batch_memory_queue = mp.Queue()
     trainer_events = [mp.Event() for _ in range(const.NUM_ENVS)]
     eval_events = [mp.Event() for _ in range(const.NUM_ENVS)]
+    termination_allowed_events = [mp.Event() for _ in range(const.NUM_ENVS)]
     actor_processes = []
 
     for env_id in range(const.NUM_ENVS):
@@ -134,6 +138,7 @@ def main(resume_training_checkpoint: str = None):
                 batch_memory_queue,
                 trainer_events[env_id],
                 eval_events[env_id],
+                termination_allowed_events[env_id],
                 device,
                 num_actions,
                 int(const.NUM_EPISODES / const.NUM_ENVS) + 1,
@@ -179,8 +184,8 @@ def main(resume_training_checkpoint: str = None):
             for eval_event in eval_events:
                 eval_event.clear()
 
-    for actor_process in actor_processes:
-        actor_process.join()
+    for termination_allowed_event in termination_allowed_events:
+        termination_allowed_event.set()
 
 
 if __name__ == "__main__":
