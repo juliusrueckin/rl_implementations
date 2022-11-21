@@ -324,14 +324,14 @@ class PPOWrapper:
             for step in count():
                 if step < no_op_steps:
                     action = torch.tensor([[random.randrange(self.num_actions)]], device=self.device, dtype=torch.long)
-                    _, _, done, _ = env.step(action.item())
+                    _, _, done, _, _ = env.step(action.item())
                     if done:
                         break
 
                     continue
 
                 if step % const.ACTION_REPETITIONS != 0:
-                    _, _, done, _ = env.step(action.item())
+                    _, _, done, _, _ = env.step(action.item())
                     if done:
                         episode_returns[episode] = episode_return
                         break
@@ -342,7 +342,7 @@ class PPOWrapper:
                     policy = self.policy_net_old(state_tensor.to(self.device))
                     action = policy.probs.max(1)[1].view(1)
 
-                _, reward, done, _ = env.step(action.item())
+                _, reward, done, _, _ = env.step(action.item())
                 episode_return += reward
 
                 next_observation = utils.get_cartpole_screen(env, const.INPUT_SIZE)

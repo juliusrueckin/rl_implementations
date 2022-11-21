@@ -50,14 +50,14 @@ def collect_rollouts(
 
             if t < no_op_steps:
                 action = torch.tensor([[random.randrange(num_actions)]], device=device, dtype=torch.long)
-                _, _, done, _ = env.step(action.item())
+                _, _, done, _, _ = env.step(action.item())
                 if done:
                     break
 
                 continue
 
             if t % const.ACTION_REPETITIONS != 0:
-                _, reward, done, _ = env.step(action.item())
+                _, reward, done, _, _ = env.step(action.item())
                 episode_return += reward
 
                 if done:
@@ -90,7 +90,7 @@ def collect_rollouts(
                 const.V_MAX,
                 eval_mode=False,
             )
-            _, reward, done, _ = env.step(action.item())
+            _, reward, done, _, _ = env.step(action.item())
             episode_return += reward
             reward = torch.tensor([reward], device=device)
             done_tensor = torch.tensor([int(done)], dtype=torch.int32, device=device)

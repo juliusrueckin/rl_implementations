@@ -51,14 +51,14 @@ def collect_rollouts(
             steps_done += 1
             if step < no_op_steps:
                 action = torch.tensor([[random.randrange(num_actions)]], device=device, dtype=torch.long)
-                _, _, done, _ = env.step(action.item())
+                _, _, done, _, _ = env.step(action.item())
                 if done:
                     break
 
                 continue
 
             if step % const.ACTION_REPETITIONS != 0:
-                _, _, done, _ = env.step(action.item())
+                _, _, done, _, _ = env.step(action.item())
                 if done:
                     break
 
@@ -68,7 +68,7 @@ def collect_rollouts(
                 policy = local_policy_net_old(state_tensor.to(device))
                 action = policy.sample()
 
-            _, reward, done, _ = env.step(action.item())
+            _, reward, done, _, _ = env.step(action.item())
             episode_return += reward
             reward = torch.tensor([reward], device=device)
 

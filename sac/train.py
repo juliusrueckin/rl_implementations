@@ -47,14 +47,14 @@ def collect_rollouts(
             local_policy_net.load_state_dict(shared_policy_net.state_dict())
 
             if step < no_op_steps:
-                _, _, done, _ = env.step(env.action_space.sample())
+                _, _, done, _, _ = env.step(env.action_space.sample())
                 if done:
                     break
 
                 continue
 
             if step % const.ACTION_REPETITIONS != 0:
-                _, reward, done, _ = env.step(u.cpu().numpy())
+                _, reward, done, _, _ = env.step(u.cpu().numpy())
                 episode_return += reward
 
                 if done:
@@ -80,7 +80,7 @@ def collect_rollouts(
                 )
                 action, u = action.squeeze(1), u.squeeze(1)
 
-            _, reward, done, _ = env.step(u.cpu().numpy())
+            _, reward, done, _, _ = env.step(u.cpu().numpy())
             episode_return += reward
             reward = torch.tensor([reward], device=device)
             done_tensor = torch.tensor([int(done)], dtype=torch.int32, device=device)

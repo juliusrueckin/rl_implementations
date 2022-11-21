@@ -20,9 +20,8 @@ TransitionPPO = namedtuple("TransitionPPO", ("state", "action", "policy", "rewar
 
 
 def make_env(env_id: int, env_name: str):
-    env = gym.make(env_name)
-    env.seed(env_id)
-    env.reset()
+    env = gym.make(env_name, render_mode="rgb_array")
+    env.reset(seed=env_id)
     return env
 
 
@@ -41,7 +40,7 @@ def get_cartpole_screen(env, input_size: int) -> torch.Tensor:
             T.ToTensor(),
         ]
     )
-    screen = env.render(mode="rgb_array").transpose((2, 0, 1))
+    screen = env.render().transpose((2, 0, 1))
     _, screen_height, screen_width = screen.shape
     screen = screen[:, int(screen_height * 0.4) : int(screen_height * 0.8)]
     view_width = int(screen_width * 0.6)
@@ -68,7 +67,7 @@ def get_pendulum_screen(env, input_size: int) -> torch.Tensor:
             T.ToTensor(),
         ]
     )
-    screen = env.render(mode="rgb_array").transpose((2, 0, 1))
+    screen = env.render().transpose((2, 0, 1))
     _, screen_height, screen_width = screen.shape
     screen = screen[
         :, int(screen_width * 0.2) : int(screen_width * 0.8), int(screen_height * 0.2) : int(screen_height * 0.8)

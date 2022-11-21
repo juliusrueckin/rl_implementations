@@ -481,14 +481,14 @@ class SACWrapper:
             no_op_steps = random.randint(0, const.NO_OP_MAX_STEPS)
             for t in count():
                 if t < no_op_steps:
-                    _, _, done, _ = env.step(env.action_space.sample())
+                    _, _, done, _, _ = env.step(env.action_space.sample())
                     if done:
                         break
 
                     continue
 
                 if t % const.ACTION_REPETITIONS != 0:
-                    _, reward, done, _ = env.step(u.cpu().numpy())
+                    _, reward, done, _, _ = env.step(u.cpu().numpy())
                     episode_return += reward
                     if done:
                         episode_returns[episode] = episode_return
@@ -504,7 +504,7 @@ class SACWrapper:
                     )
                     u = u.squeeze(1)
 
-                _, reward, done, _ = env.step(u.cpu().numpy())
+                _, reward, done, _, _ = env.step(u.cpu().numpy())
                 episode_return += reward
 
                 next_observation = utils.get_pendulum_screen(env, const.IMAGE_SIZE)

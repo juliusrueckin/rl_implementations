@@ -1,9 +1,10 @@
 import gym
-from utils import utils
-import q_learning_constants as const
 import matplotlib.pyplot as plt
 
-env = gym.make(const.ENV_NAME).unwrapped
+import q_learning_constants as const
+from utils import utils
+
+env = gym.make(const.ENV_NAME, render_mode="rgb_array").unwrapped
 env.reset()
 
 plt.figure()
