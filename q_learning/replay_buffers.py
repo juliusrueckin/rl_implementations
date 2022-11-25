@@ -12,10 +12,10 @@ class ReplayBuffer:
     ):
         self.num_envs = num_envs
         self.n_steps = n_steps
-        self.buffer_length = buffer_length // num_envs
+        self.buffer_length = int(buffer_length // num_envs) + 1
         self.batch_size = batch_size
         self.n_step_buffer = {env_id: deque([], maxlen=n_steps) for env_id in range(num_envs)}
-        self.buffer = {env_id: deque([], maxlen=int(buffer_length // num_envs) + 1) for env_id in range(num_envs)}
+        self.buffer = {env_id: deque([], maxlen=self.buffer_length) for env_id in range(num_envs)}
         self.beta = 1
         self.gamma = gamma
 
@@ -159,7 +159,7 @@ class PrioritizedExperienceReplay(ReplayBuffer):
         self.alpha = alpha
         self.beta0 = beta0
         self.beta = beta0
-        self.priorities = {env_id: deque([], maxlen=buffer_length) for env_id in range(num_envs)}
+        self.priorities = {env_id: deque([], maxlen=self.buffer_length) for env_id in range(num_envs)}
         self.total_steps = (buffer_length // batch_size) * replay_delay
 
     def load_state_dict(self, checkpoint_dir: Dict):

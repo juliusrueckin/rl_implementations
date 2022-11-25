@@ -173,7 +173,7 @@ def main(resume_training_checkpoint: str = None):
         if rollout_data["transition"] is not None:
             state, action, next_state, reward, done = rollout_data["transition"]
             deep_q_learning_wrapper.replay_buffer.push(
-                rollout_data["env_id"],
+                copy.deepcopy(rollout_data["env_id"]),
                 copy.deepcopy(state),
                 copy.deepcopy(action),
                 copy.deepcopy(next_state),
@@ -182,11 +182,11 @@ def main(resume_training_checkpoint: str = None):
             )
 
             if done.item():
-                deep_q_learning_wrapper.episode_terminated(rollout_data["return"])
+                deep_q_learning_wrapper.episode_terminated(copy.deepcopy(rollout_data["return"]))
 
             del rollout_data, state, action, next_state, reward, done
         else:
-            deep_q_learning_wrapper.episode_terminated(rollout_data["return"])
+            deep_q_learning_wrapper.episode_terminated(copy.deepcopy(rollout_data["return"]))
             del rollout_data
 
         deep_q_learning_wrapper.total_steps_done += 1
